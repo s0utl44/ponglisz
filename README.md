@@ -28,38 +28,36 @@ Obie osoby mają też wspólne podstawy: **codzienny angielski**, **zwroty do ro
 
 ## Uruchomienie
 
-To zwykła strona statyczna (HTML + CSS + JS). Lokalnie wystarczy otworzyć `index.html` w przeglądarce.
+To zwykła strona (HTML + CSS + JS). Lokalnie wystarczy otworzyć `public/index.html` w przeglądarce.
 
-### Publikacja na ponglisz.io z logowaniem mailem (Cloudflare)
+### Publikacja na ponglisz.io z logowaniem mailem (Cloudflare Workers)
 
-Strona jest hostowana na **Cloudflare Pages**, a **Cloudflare Access** wpuszcza tylko dwa wskazane adresy e-mail
-(logowanie jednorazowym kodem wysyłanym na maila, bez haseł – maile wysyła Cloudflare, własna skrzynka nie jest potrzebna).
-Postępy trzyma baza **Cloudflare D1** (darmowy plan w zupełności wystarcza). Plik `functions/_middleware.js` przekierowuje
-wszystkie inne adresy (np. `*.pages.dev`) na `ponglisz.io` i blokuje stronę, dopóki Access nie jest włączony.
+Strona działa na **Cloudflare Workers** (pliki w `public/`, logika w `worker/index.js`, konfiguracja w `wrangler.jsonc`).
+**Cloudflare Access** wpuszcza tylko dwa wskazane adresy e-mail – logowanie jednorazowym kodem z maila, bez haseł
+(maile wysyła Cloudflare, własna skrzynka nie jest potrzebna). Postępy trzyma baza **Cloudflare D1**.
+Worker przekierowuje wszystkie inne adresy (`*.workers.dev`, `www`) na `ponglisz.io` i niczego nie pokazuje bez zalogowania.
 
-1. **Domena w Cloudflare:** dash.cloudflare.com → *Add a domain* → `ponglisz.io` (plan Free). Sprawdź, czy Cloudflare przepisał istniejące rekordy DNS (np. rekord A Twojego VPS-a). Następnie w Hostingerze: *hPanel → Domeny → ponglisz.io → DNS / Nameservers → Zmień nameservery* i wpisz dwa adresy od Cloudflare.
-2. **Hosting:** *Workers & Pages → Create → Pages → Connect to Git* → repozytorium `ponglisz`, gałąź `main`, *Framework preset: None*, polecenie budowania puste, katalog wyjściowy `/`.
-3. **Domena strony:** w projekcie Pages → *Custom domains* → dodaj `ponglisz.io`.
-4. **Logowanie:** *Zero Trust* (przy pierwszym wejściu wybierz plan Free) → *Access → Applications → Add an application → Self-hosted*:
-   - domena: `ponglisz.io`,
-   - polityka: *Action: Allow*, *Include → Emails* → dwa adresy (Jany i Dominika),
-   - metoda logowania: *One-time PIN* (włączona domyślnie),
-   - czas sesji np. 1 miesiąc, żeby nie logować się codziennie.
-5. **Baza na postępy:** *Workers & Pages → D1 → Create database* (nazwa np. `ponglisz`). Potem w projekcie Pages → *Settings → Bindings → Add → D1 database*: nazwa zmiennej **`DB`**, baza `ponglisz`. Tabela utworzy się sama.
-6. **Zmienne (Settings → Variables and Secrets), następnie ponowne wdrożenie (*Deployments → Retry deployment*):**
+1. **Domena w Cloudflare:** *Add a site → Connect a domain → `ponglisz.io` → plan Free*, a w Hostingerze (*Domeny → ponglisz.io → DNS / Serwery nazw → Zmień serwery nazw*) wpisz dwa nameservery od Cloudflare. DNSSEC w Hostingerze ma być wyłączony.
+2. **Wdrożenie:** *Workers & Pages → Create → Import a repository → `ponglisz`*. Pola zostaw domyślne (*Deploy command:* `npx wrangler deploy`, *Path:* `/`, *Build command* puste), *Enable Preview builds* można wyłączyć → **Deploy**. Każdy push do `main` wdraża się sam.
+3. **Domena workera:** w workerze *Settings → Domains & Routes → Add → Custom domain* → `ponglisz.io` (Cloudflare zastąpi stary rekord A). To samo dla `www.ponglisz.io`. Jeśli VPS ma być dalej osiągalny, dodaj w DNS rekord A `vps` → IP serwera (szara chmurka).
+4. **Logowanie:** *Zero Trust → Access → Applications → Add an application → Self-hosted*: domeny `ponglisz.io` i `www.ponglisz.io`, polityka *Allow → Include → Emails* (adresy Jany i Dominika), logowanie *One-time PIN*, czas sesji np. 1 miesiąc.
+5. **Baza na postępy:** *Storage & Databases → D1 → Create* (nazwa `ponglisz`). Skopiuj jej **Database ID** i dopisz do `wrangler.jsonc`:
+   ```jsonc
+   "d1_databases": [{ "binding": "DB", "database_name": "ponglisz", "database_id": "<ID>" }],
+   ```
+   Tabela utworzy się sama.
+6. **Zmienne** (worker → *Settings → Variables and Secrets*; zostają przy kolejnych wdrożeniach dzięki `keep_vars`):
    - `PROFILE_EMAILS` = `jana=adres-jany@…,dominik=adres-dominika@…` – po zalogowaniu każdy trafia od razu do swojej zakładki,
-   - `ACCESS_TEAM_DOMAIN` = `twoj-zespol.cloudflareaccess.com` (Zero Trust → Settings → Team domain) oraz
-     `ACCESS_AUD` = *Application Audience (AUD) Tag* z ustawień aplikacji w Access – serwer dodatkowo sprawdzi podpis tokenu logowania (zalecane).
-7. Jeśli wcześniej włączono **GitHub Pages**, wyłącz je (*Settings → Pages → Unpublish*). W przeciwnym razie strona byłaby dostępna bez logowania pod adresem github.io. Warto też ustawić repozytorium jako prywatne – Cloudflare Pages działa z prywatnymi repozytoriami.
+   - `ACCESS_TEAM_DOMAIN` = `twoj-zespol.cloudflareaccess.com` oraz `ACCESS_AUD` = *Application Audience (AUD) Tag* aplikacji w Access – dodatkowa weryfikacja podpisu logowania (zalecane).
 
 Po zalogowaniu w stopce widać adres e-mail, stan synchronizacji i link **Wyloguj**.
 
 Postępy zapisują się w przeglądarce (`localStorage`), a po wdrożeniu na Cloudflare także w bazie D1 – automatycznie, po lekcjach i przy zamknięciu karty. Bez internetu nauka działa dalej, a zmiany wyślą się później; postępy z dwóch urządzeń są łączone, więc nic nie ginie. Eksport/import w Ustawieniach zostaje jako kopia zapasowa.
 
-Test lokalny z bazą: `npx wrangler pages dev . --d1 DB=local-db`.
+Test lokalny z serwerem: `npx wrangler dev` (adres `localhost` omija logowanie).
 
 ## Dodawanie materiałów
 
-- Słownictwo: `js/data/decks-*.js` – format `["angielski", "polski", poziom 1–4, "przykładowe zdanie"]`
-- Gramatyka: `js/data/grammar.js`
-- Teksty: `js/data/readings.js`
+- Słownictwo: `public/js/data/decks-*.js` – format `["angielski", "polski", poziom 1–4, "przykładowe zdanie"]`
+- Gramatyka: `public/js/data/grammar.js`
+- Teksty: `public/js/data/readings.js`
