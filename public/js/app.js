@@ -579,7 +579,7 @@
         </a>
         <div class="split-handle" id="handle" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"
              aria-label="Przesuń w prawo, aby otworzyć kurs Jany, w lewo – kurs Dominika"><span class="knob">‹ ›</span></div>
-        <div class="split-hint"><span data-h="← Dominik" data-v="↑ Dominik"></span><span>przeciągnij</span><span data-h="Jana →" data-v="Jana ↓"></span></div>
+        <div class="split-hint"><span>przeciągnij</span></div>
         <a class="split-logo" href="#/">PONGLISZ</a>
         <div class="split-theme">${themeToggle()}</div>
       </section>`;

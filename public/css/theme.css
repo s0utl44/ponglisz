@@ -139,7 +139,7 @@ html[data-theme="light"] .pane-jana { background: radial-gradient(60% 50% at cal
 @keyframes knob { 0%, 100% { transform: translate(-50%, -50%); } 25% { transform: translate(calc(-50% + 8px), -50%); } 75% { transform: translate(calc(-50% - 8px), -50%); } }
 .split-hint { position: absolute; left: var(--pos); top: calc(50% + 50px); transform: translateX(-50%); z-index: 4; display: flex; gap: 14px; font-size: .74rem; letter-spacing: .14em; text-transform: uppercase; white-space: nowrap; pointer-events: none; }
 .split-hint span { padding: 4px 10px; border-radius: 999px; background: rgba(0, 0, 0, .45); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); }
-.split-hint span:nth-child(2) { background: transparent; opacity: .7; }
+.split-hint span { opacity: .85; }
 .split.opening .split-hint, .split.opening .split-handle { opacity: 0; transition: opacity .2s; }
 .split-logo { position: absolute; top: 20px; left: 24px; z-index: 5; color: #fff; text-decoration: none; font-family: Anton, sans-serif; font-size: 1.4rem; letter-spacing: .08em; mix-blend-mode: difference; }
 .split-theme { position: absolute; top: 16px; right: 20px; z-index: 5; }
@@ -163,9 +163,6 @@ html[data-theme="light"] .split.vertical .pane-jana { background: radial-gradien
 .split.vertical .knob { left: 50%; top: 0; transform: translate(-50%, -50%) rotate(90deg); animation-name: knobv; }
 @keyframes knobv { 0%, 100% { transform: translate(-50%, -50%) rotate(90deg); } 25% { transform: translate(-50%, calc(-50% + 7px)) rotate(90deg); } 75% { transform: translate(-50%, calc(-50% - 7px)) rotate(90deg); } }
 .split.vertical .split-hint { left: 50%; top: calc(var(--pos) + 42px); }
-.split.vertical .split-hint span:nth-child(2) { display: none; }
-.split-hint span[data-h]::after { content: attr(data-h); }
-.split.vertical .split-hint span[data-h]::after { content: attr(data-v); }
 
 /* =======================================================================
    SCENA Z DOMEM (wspólna dla ekranu startowego i pulpitu Dominika)
