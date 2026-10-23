@@ -1,5 +1,75 @@
 /* Teksty do czytania – osobne dla Jany i Dominika, rosnący poziom. */
 window.READINGS = {
+  shared: [
+    {
+      id: 's-weekend', lvl: 1, title: 'A Weekend in Wrocław',
+      text: `Marta and her friend Ola have a free weekend, so they decide to visit Wrocław. They arrive by train on Friday evening and walk to their hotel in the old town.
+
+On Saturday morning they go to the market square. It is big and beautiful, with colourful tenement houses and an old Gothic town hall. There are many tourists, cafés and street musicians. Ola wants to find the dwarfs – small bronze figures that are everywhere in the city. They find twelve dwarfs before lunch!
+
+In the afternoon they take a tram to the Centennial Hall and walk in the Japanese Garden. Then they go to Ostrów Tumski, the oldest part of the city. In the evening a lamplighter walks along the street and lights the old gas lamps. It is very romantic.
+
+On Sunday they take a boat trip on the Oder and eat pierogi in a small restaurant. "We must come back in December for the Christmas market," says Marta.`,
+      gloss: { 'old town': 'stare miasto', 'market square': 'rynek', 'tenement houses': 'kamienice', 'town hall': 'ratusz', dwarfs: 'krasnale', bronze: 'z brązu', lamplighter: 'latarnik', 'boat trip': 'rejs', 'Christmas market': 'jarmark świąteczny' },
+      q: [
+        { q: 'How do Marta and Ola travel to Wrocław?', o: ['By car', 'By train', 'By plane', 'By bus'], a: 1 },
+        { q: 'How many dwarfs do they find before lunch?', o: ['Two', 'Ten', 'Twelve', 'Twenty'], a: 2 },
+        { q: 'What happens on Ostrów Tumski in the evening?', o: ['A concert starts', 'A lamplighter lights the gas lamps', 'The market opens', 'The trams stop'], a: 1 },
+        { q: 'When does Marta want to come back?', o: ['In summer', 'In December', 'Next weekend', 'Never'], a: 1 }
+      ]
+    },
+    {
+      id: 's-snowboard', lvl: 2, title: 'My First Day on a Snowboard',
+      text: `Last winter I finally tried snowboarding. My friends had been riding for years, and I was tired of waiting for them in the mountain hut, so I booked a lesson in Szklarska Poręba.
+
+My instructor, Kuba, was very patient. First, he showed me how to put on the bindings and how to stand on the board. "Are you regular or goofy?" he asked. I had no idea! It turned out that I'm goofy – I ride with my right foot forward.
+
+For the first hour we stayed on a gentle slope near the rental shop. I fell again and again. Snowboarding is much harder than it looks, especially when you try to stop. Kuba kept saying, "Lean on your back edge and look where you want to go."
+
+After lunch, we took the drag lift for the first time. It was a disaster – I fell off twice! But by the end of the day I could make a few slow turns without falling. My legs were sore and I had a big bruise on my knee, but I was really proud of myself. Next weekend I'm going back.`,
+      gloss: { 'mountain hut': 'schronisko', instructor: 'instruktor', patient: 'cierpliwy', bindings: 'wiązania', goofy: 'goofy (prawa noga z przodu)', gentle: 'łagodny', 'rental shop': 'wypożyczalnia', lean: 'oprzyj się, pochyl', 'back edge': 'tylna krawędź', 'drag lift': 'wyciąg orczykowy', sore: 'obolały', bruise: 'siniak' },
+      q: [
+        { q: 'Why did the writer decide to learn snowboarding?', o: ['The doctor recommended it', 'They were tired of waiting for their friends', 'They won a free lesson', 'They wanted to become an instructor'], a: 1 },
+        { q: 'What does "goofy" mean?', o: ['Riding with the right foot forward', 'Riding very fast', 'Falling a lot', 'Riding without bindings'], a: 0 },
+        { q: 'What happened on the drag lift?', o: ['It stopped', 'The writer fell off twice', 'Kuba fell off', 'It was closed'], a: 1 },
+        { q: 'How did the writer feel at the end of the day?', o: ['Angry', 'Bored', 'Proud', 'Scared'], a: 2 }
+      ]
+    },
+    {
+      id: 's-pierogi', lvl: 3, title: 'Pierogi: A Family Tradition',
+      text: `In our family, making pierogi is not just cooking – it's an event. Every year, on the day before Christmas Eve, my grandmother gathers us all in her small kitchen in Wrocław, and we spend the whole afternoon making hundreds of them.
+
+The dough is surprisingly simple: flour, warm water, a little oil and a pinch of salt. The secret, according to my grandmother, is to knead it for at least ten minutes, until it's smooth and elastic. "If you rush it, the pierogi will fall apart in the water," she warns.
+
+While the dough is resting, we prepare the fillings. The traditional Christmas version is filled with sauerkraut and mushrooms, but we always make a batch of "ruskie" as well – potatoes, white cheese and fried onion. My little cousins prefer the sweet ones with blueberries, which are usually eaten before they even reach the table.
+
+Then the real work begins. The dough is rolled out thinly, cut into circles with a glass, filled and carefully sealed. Each pierogi has to be pinched tightly, otherwise the filling leaks out during boiling. They are boiled in salted water until they float, and the leftovers are fried in butter the next day – which, if you ask me, is when they taste best.`,
+      gloss: { gathers: 'zbiera', dough: 'ciasto', pinch: 'szczypta', knead: 'zagniatać', elastic: 'elastyczne', 'fall apart': 'rozpaść się', sauerkraut: 'kiszona kapusta', batch: 'partia, porcja', 'rolled out': 'rozwałkowane', sealed: 'zlepione', pinched: 'ściśnięte', leaks: 'wycieka', float: 'wypłyną', leftovers: 'resztki' },
+      q: [
+        { q: 'When does the family make pierogi?', o: ['On Christmas Eve', 'On the day before Christmas Eve', 'On New Year\'s Day', 'Every Sunday'], a: 1 },
+        { q: 'What happens if you don\'t knead the dough long enough?', o: ['It becomes too sweet', 'The pierogi fall apart in the water', 'It sticks to the table', 'Nothing'], a: 1 },
+        { q: 'Which pierogi do the cousins prefer?', o: ['Ruskie', 'With sauerkraut and mushrooms', 'With blueberries', 'With meat'], a: 2 },
+        { q: 'When do pierogi taste best, according to the writer?', o: ['Straight from the water', 'Fried in butter the next day', 'Cold', 'Baked in the oven'], a: 1 }
+      ]
+    },
+    {
+      id: 's-bridges', lvl: 4, title: 'A City Shaped by Water',
+      text: `Few European cities owe as much to their river as Wrocław. The Oder and its tributaries split the city into a dozen islands, which is why Wrocław boasts well over a hundred bridges – more than almost any other city in Poland. Ostrów Tumski, the historic core, was once a genuine island, surrounded on all sides by water.
+
+This intimate relationship with water has not always been benign. In July 1997, after days of torrential rain in the Sudetes and the Czech mountains, the Oder rose to levels not seen for centuries. Large parts of the city were flooded, thousands of residents were evacuated and the damage ran into billions of złoty. The so-called Flood of the Millennium exposed how inadequate the existing flood defences had become.
+
+In the decades that followed, considerable sums were invested in modernising the city's water management system: embankments were raised, relief channels widened and a large dry reservoir was built upstream at Racibórz to absorb future flood waves. Hydrologists nevertheless caution that no system offers complete protection, particularly as climate change is likely to make extreme rainfall events more frequent.
+
+Today, the riverbanks have largely been reclaimed by residents. On summer evenings, the boulevards along the Oder are packed with people strolling, cycling and relaxing in riverside bars – a reminder that the same water that once threatened the city now defines much of its charm.`,
+      gloss: { tributaries: 'dopływy', boasts: 'może się pochwalić', genuine: 'prawdziwy', benign: 'łagodny, nieszkodliwy', torrential: 'ulewny', evacuated: 'ewakuowani', inadequate: 'niewystarczający', 'flood defences': 'zabezpieczenia przeciwpowodziowe', embankments: 'wały', 'relief channels': 'kanały ulgi', 'dry reservoir': 'suchy zbiornik (polder)', upstream: 'w górę rzeki', caution: 'ostrzegają', reclaimed: 'odzyskane' },
+      q: [
+        { q: 'Why does Wrocław have so many bridges?', o: ['Because of its mountains', 'Because the river and its tributaries create many islands', 'Because of the 1997 flood', 'Because it is the capital'], a: 1 },
+        { q: 'What caused the 1997 flood?', o: ['Melting glaciers', 'Days of heavy rain in the mountains', 'A broken dam in Wrocław', 'A storm at sea'], a: 1 },
+        { q: 'What is the purpose of the reservoir at Racibórz?', o: ['To produce electricity', 'To absorb future flood waves', 'To provide drinking water', 'To attract tourists'], a: 1 },
+        { q: 'What do hydrologists warn about?', o: ['That the reservoir is too small', 'That no system gives complete protection', 'That bridges are unsafe', 'That the river will dry up'], a: 1 }
+      ]
+    }
+  ],
   jana: [
     {
       id: 'j-field-day', lvl: 1, title: 'A Day in the Field',

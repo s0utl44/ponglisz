@@ -7,12 +7,18 @@
   const PROFILES = {
     jana: {
       name: 'Jana', emoji: '🌋', tagline: 'Geologia · ekologia · nauki ścisłe',
-      decks: ['geology', 'ecology', 'science', 'general', 'phrases']
+      decks: ['geology', 'ecology', 'science', 'general', 'phrases', 'wroclaw', 'snow', 'cooking']
     },
     dominik: {
       name: 'Dominik', emoji: '🏠', tagline: 'Nieruchomości · sprzedaż · prawo i finanse',
-      decks: ['realestate', 'sales', 'legal', 'general', 'phrases']
+      decks: ['realestate', 'sales', 'legal', 'general', 'phrases', 'wroclaw', 'snow', 'cooking']
     }
+  };
+  // Długości lekcji
+  const SIZES = {
+    quick: { label: '⚡ Szybka lekcja', time: '~3 min', maxNew: 3, maxDue: 4, gram: 1 },
+    normal: { label: '📘 Lekcja', time: '~10 min', maxNew: null, maxDue: 24, gram: 4 },
+    long: { label: '🎓 Długa lekcja', time: '~20 min', maxNew: 'plus', maxDue: 40, gram: 8, intro: true }
   };
   const LEVELS = { 1: 'A2', 2: 'B1', 3: 'B1+', 4: 'B2' };
   const LEVEL_DESC = {
@@ -89,7 +95,141 @@
     return defaultState();
   }
   function save() {
+    S.updatedAt = Date.now();
     try { localStorage.setItem(KEY(cur), JSON.stringify(S)); } catch (e) { /* brak miejsca / tryb prywatny */ }
+    setDirty(cur, true);
+    schedulePush();
+  }
+
+  // ---------- synchronizacja z chmurą (Cloudflare D1) ----------
+  const SYNC = { on: false, me: null, rev: {}, force: {}, timer: null, busy: false, again: false, last: null, error: false };
+  // Flaga „są niewysłane zmiany” przetrwa zamknięcie karty – wyślemy je przy następnym otwarciu.
+  const isDirty = pid => { try { return localStorage.getItem('ponglisz:dirty:' + pid) === '1'; } catch (e) { return false; } };
+  const setDirty = (pid, v) => { try { if (v) localStorage.setItem('ponglisz:dirty:' + pid, '1'); else localStorage.removeItem('ponglisz:dirty:' + pid); } catch (e) { /* ignorujemy */ } };
+
+  // Łączy postępy z dwóch urządzeń: niczego nie gubi, a ustawienia bierze z nowszej wersji.
+  function mergeState(a, b) {
+    if (!b) return a;
+    if (!a) return Object.assign(defaultState(), b);
+    const newer = (a.updatedAt || 0) >= (b.updatedAt || 0) ? a : b;
+    const m = Object.assign(defaultState(), newer);
+    m.cards = {};
+    new Set(Object.keys(a.cards || {}).concat(Object.keys(b.cards || {}))).forEach(id => {
+      const x = (a.cards || {})[id], y = (b.cards || {})[id];
+      m.cards[id] = !x ? y : !y ? x : ((x.l || 0) > (y.l || 0) || ((x.l || 0) === (y.l || 0) && x.s >= y.s)) ? x : y;
+    });
+    m.days = {};
+    new Set(Object.keys(a.days || {}).concat(Object.keys(b.days || {}))).forEach(k => {
+      const x = (a.days || {})[k], y = (b.days || {})[k];
+      m.days[k] = !x ? y : !y ? x : (x.t >= y.t ? x : y);
+    });
+    m.grammar = {};
+    new Set(Object.keys(a.grammar || {}).concat(Object.keys(b.grammar || {}))).forEach(id => {
+      const x = (a.grammar || {})[id] || {}, y = (b.grammar || {})[id] || {};
+      m.grammar[id] = { a: Math.max(x.a || 0, y.a || 0), c: Math.max(x.c || 0, y.c || 0), best: Math.max(x.best || 0, y.best || 0), last: (newer === a ? x : y).last };
+    });
+    m.reading = {};
+    new Set(Object.keys(a.reading || {}).concat(Object.keys(b.reading || {}))).forEach(id => {
+      const x = (a.reading || {})[id] || {}, y = (b.reading || {})[id] || {};
+      m.reading[id] = { best: Math.max(x.best || 0, y.best || 0), last: (newer === a ? x : y).last };
+    });
+    m.xp = Math.max(a.xp || 0, b.xp || 0);
+    m.sessions = Math.max(a.sessions || 0, b.sessions || 0);
+    m.placed = !!(a.placed || b.placed);
+    const seen = new Set();
+    m.log = (a.log || []).concat(b.log || []).filter(x => { const k = JSON.stringify(x); if (seen.has(k)) return false; seen.add(k); return true; })
+      .sort((x, y) => (x.d < y.d ? -1 : x.d > y.d ? 1 : 0));
+    m.updatedAt = Math.max(a.updatedAt || 0, b.updatedAt || 0);
+    return m;
+  }
+
+  function setSyncStatus() {
+    const el = $('#syncstat');
+    if (!el) return;
+    if (!SYNC.on) { el.textContent = 'Postępy zapisują się w tej przeglądarce · kopię zrobisz w Ustawieniach'; return; }
+    el.textContent = SYNC.error
+      ? '⚠️ Brak połączenia – postępy zapisane na tym urządzeniu, wyślę je później'
+      : SYNC.last ? `☁️ Postępy zsynchronizowane (${SYNC.last.toLocaleTimeString('pl-PL', { hour: '2-digit', minute: '2-digit' })})` : '☁️ Synchronizacja…';
+  }
+
+  function schedulePush() {
+    if (!SYNC.on) return;
+    clearTimeout(SYNC.timer);
+    SYNC.timer = setTimeout(() => syncNow(cur), 8000);
+  }
+
+  // Pobiera stan z chmury, łączy z lokalnym i – jeśli są lokalne zmiany – odsyła wynik.
+  async function syncNow(pid) {
+    if (!SYNC.on || !pid) return false;
+    if (SYNC.busy) { SYNC.again = pid; return false; }
+    SYNC.busy = true;
+    clearTimeout(SYNC.timer);
+    let changed = false;
+    try {
+      for (let attempt = 0; attempt < 4; attempt++) {
+        const r = await fetch('/api/progress?p=' + pid, { cache: 'no-store' });
+        if (!r.ok) throw new Error('get ' + r.status);
+        const remote = await r.json();
+        const local = pid === cur ? S : load(pid);
+        // po imporcie / wyzerowaniu lokalny stan ma zastąpić ten w chmurze, a nie się z nim łączyć
+        const merged = SYNC.force[pid] ? local : mergeState(local, remote.state);
+        const before = JSON.stringify(local);
+        if (JSON.stringify(merged) !== before) changed = true;
+        if (pid === cur) S = merged;
+        try { localStorage.setItem(KEY(pid), JSON.stringify(merged)); } catch (e) { /* ignorujemy */ }
+        SYNC.rev[pid] = remote.rev;
+        if (remote.state && !isDirty(pid)) break;
+        const pushedAt = merged.updatedAt || 0;
+        const p = await fetch('/api/progress?p=' + pid, {
+          method: 'PUT', headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ baseRev: remote.rev, state: merged })
+        });
+        if (p.status === 409) continue;
+        if (!p.ok) throw new Error('put ' + p.status);
+        SYNC.rev[pid] = (await p.json()).rev;
+        // jeśli w trakcie wysyłania doszły nowe odpowiedzi, zostawiamy flagę – pójdą w następnej turze
+        const nowLocal = pid === cur ? S : load(pid);
+        SYNC.force[pid] = false;
+        if ((nowLocal.updatedAt || 0) <= pushedAt) setDirty(pid, false); else schedulePush();
+        break;
+      }
+      SYNC.last = new Date(); SYNC.error = false;
+    } catch (e) {
+      SYNC.error = true;
+    } finally {
+      SYNC.busy = false;
+      setSyncStatus();
+      if (SYNC.again) { const p = SYNC.again; SYNC.again = false; syncNow(p); }
+    }
+    return changed;
+  }
+
+  // Szybkie wysłanie przy zamykaniu karty / przełączaniu aplikacji na telefonie.
+  function flushOnHide() {
+    if (!SYNC.on || !cur || !isDirty(cur) || SYNC.rev[cur] == null) return;
+    try {
+      fetch('/api/progress?p=' + cur, {
+        method: 'PUT', keepalive: true, headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ baseRev: SYNC.rev[cur], state: S })
+      }).then(r => { if (r.ok) return r.json().then(j => { SYNC.rev[cur] = j.rev; setDirty(cur, false); }); }).catch(() => {});
+    } catch (e) { /* ignorujemy */ }
+  }
+
+  async function syncInit() {
+    if (location.protocol !== 'https:' && location.hostname !== 'localhost') return null;
+    try {
+      const r = await fetch('/api/me', { cache: 'no-store' });
+      if (!r.ok) return null;
+      SYNC.me = await r.json();
+      SYNC.on = !!SYNC.me.sync;
+      const who = $('#who');
+      if (SYNC.me.email && who) {
+        who.innerHTML = ` · zalogowano jako <b>${h(SYNC.me.email)}</b> · <a href="/cdn-cgi/access/logout">Wyloguj</a>`;
+        who.hidden = false;
+      }
+      setSyncStatus();
+      return SYNC.me;
+    } catch (e) { return null; }
   }
 
   // ---------- dane ----------
@@ -102,6 +242,7 @@
   }
   const profileDecks = () => PROFILES[cur].decks;
   const profileItems = () => profileDecks().flatMap(deckItems);
+  const readingsFor = () => (READINGS[cur] || []).concat(READINGS.shared || []).sort((a, b) => a.lvl - b.lvl);
   const GRAMMAR_BY_ID = {};
   GRAMMAR.forEach(t => { GRAMMAR_BY_ID[t.id] = t; });
 
@@ -215,17 +356,20 @@
     return out;
   }
 
-  function buildSession(deck) {
+  function buildSession(deck, size) {
+    const sz = SIZES[size] || SIZES.normal;
     const now = Date.now();
     let items = profileItems();
     if (deck) items = items.filter(i => i.deck === deck);
 
     const due = shuffle(items.filter(i => S.cards[i.id] && S.cards[i.id].d <= now))
-      .sort((a, b) => S.cards[a.id].b - S.cards[b.id].b).slice(0, 24);
+      .sort((a, b) => S.cards[a.id].b - S.cards[b.id].b).slice(0, sz.maxDue);
     const unseen = items.filter(i => !S.cards[i.id]);
 
     let nNew = S.pace;
     if (due.length > 16) nNew = Math.max(3, Math.round(nNew / 2)); // dużo powtórek – mniej nowości
+    if (sz.maxNew === 'plus') nNew = Math.min(PACE_MAX + 4, S.pace * 2);
+    else if (sz.maxNew) nNew = Math.min(nNew, sz.maxNew);
     const curLvl = unseen.filter(i => i.lvl === S.level);
     const lower = unseen.filter(i => i.lvl < S.level);
     const nLow = Math.min(lower.length, Math.round(nNew * 0.4));
@@ -235,7 +379,7 @@
     }
     // Wyzwanie: gdy idzie bardzo dobrze, dorzucamy słowa z wyższego poziomu.
     let challenge = [];
-    if (S.level < 4 && S.recent.length >= 20 && recentAcc() >= 0.85) {
+    if (size !== 'quick' && S.level < 4 && S.recent.length >= 20 && recentAcc() >= 0.85) {
       challenge = pickBalanced(unseen.filter(i => i.lvl === S.level + 1), 2);
     }
     if (!fresh.length && !due.length) fresh = pickBalanced(unseen, nNew);
@@ -243,7 +387,9 @@
 
     const tasks = [];
     const rev = due.slice();
-    const gram = deck ? [] : pickGrammarTasks(4);
+    let gram = deck ? [] : pickGrammarTasks(sz.gram);
+    // długa lekcja: krótkie przypomnienie zasad przed zadaniami z gramatyki
+    if (sz.intro && gram.length) gram = [{ t: 'gramIntro', topic: gram[0].topic }].concat(gram);
     chunk(fresh, 3).forEach(g => {
       g.forEach(i => tasks.push({ t: 'learn', item: i, challenge: challenge.includes(i) }));
       rev.splice(0, 2).forEach(i => tasks.push({ t: 'quiz', item: i }));
@@ -256,7 +402,7 @@
     });
     gram.forEach(g => tasks.push(g));
 
-    return { pid: cur, tasks, idx: 0, ok: 0, n: 0, wrong: [], requeued: new Set(), deck, newCount: fresh.length, revCount: due.length, xp0: S.xp };
+    return { pid: cur, tasks, idx: 0, ok: 0, n: 0, wrong: [], requeued: new Set(), deck, size: size || 'normal', newCount: fresh.length, revCount: due.length, xp0: S.xp };
   }
 
   // ---------- adaptacja ----------
@@ -303,11 +449,21 @@
     if (pid !== cur) {
       cur = pid; S = load(pid);
       try { localStorage.setItem('ponglisz:last', pid); } catch (e) { /* ignorujemy */ }
+      pullAndRefresh(pid);
     }
     document.body.dataset.profile = pid;
     renderHeader(view);
     (VIEWS[view] || VIEWS.home)(arg);
     window.scrollTo(0, 0);
+  }
+
+  // Po pobraniu nowszych postępów z chmury odświeżamy widok – ale nie w trakcie ćwiczeń.
+  function pullAndRefresh(pid) {
+    if (!SYNC.on) return;
+    syncNow(pid).then(changed => {
+      const view = location.hash.replace(/^#\/?/, '').split('/')[1] || 'home';
+      if (changed && pid === cur && ['home', 'words', 'settings'].includes(view)) route();
+    });
   }
 
   function renderHeader(view) {
@@ -356,7 +512,7 @@
     const totalSeen = profileDecks().reduce((a, d) => a + deckStats(d).seen, 0);
     const newCount = Math.min(S.pace, profileItems().filter(i => !S.cards[i.id]).length);
     const nextTopic = GRAMMAR.filter(t => t.lvl <= S.level).sort((a, b) => gMastery(a.id) - gMastery(b.id) || a.lvl - b.lvl)[0];
-    const readings = READINGS[cur] || [];
+    const readings = readingsFor();
     const nextRead = readings.find(r => r.lvl <= S.level && !(S.reading[r.id] && S.reading[r.id].best >= 0.75)) || readings.find(r => r.lvl === Math.min(4, S.level + 1));
 
     // ostatnie 14 dni
@@ -405,7 +561,7 @@
             : 'Utrzymuj formę – powtórki pilnują, żeby nic nie uciekło.'}</p>
         </div>
         <div class="hero-actions">
-          <button class="btn big" id="start">⚡ Trening dnia <small>${due} powtórek · ${newCount} nowych · gramatyka</small></button>
+          ${lessonButtons(`<p class="small muted">Czeka ${due} powtórek · ${newCount} nowych słów w pełnej lekcji · gramatyka</p>`)}
           ${!S.placed ? `<a class="btn ghost" href="#/${cur}/test">🎯 Test poziomujący (5 min)</a>` : ''}
         </div>
       </section>
@@ -440,12 +596,19 @@
         </div>
       </section>`;
 
-    $('#start').onclick = () => startSession();
+    bindLessonButtons();
     $$('[data-train]').forEach(b => { b.onclick = () => startSession(b.dataset.train); });
   };
 
-  function startSession(deck) {
-    SESSION = buildSession(deck);
+  function lessonButtons(extraNote) {
+    return `<div class="lessons">${Object.keys(SIZES).map(k => `<button class="btn ${k === 'normal' ? '' : 'ghost'} lesson-btn" data-size="${k}">${SIZES[k].label}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
+  }
+  function bindLessonButtons() {
+    $$('[data-size]').forEach(b => { b.onclick = () => startSession(null, b.dataset.size); });
+  }
+
+  function startSession(deck, size) {
+    SESSION = buildSession(deck, size);
     if (!SESSION.tasks.length) {
       SESSION = null;
       $('#view').innerHTML = `<section class="card center"><h2>Wszystko powtórzone! 🎉</h2><p>W tej talii nie ma teraz nic do nauki. Wróć później albo wybierz inną talię.</p><a class="btn" href="#/${cur}/home">Wróć</a></section>`;
@@ -462,9 +625,10 @@
         <h1>⚡ Trening</h1>
         <p>Sesja miesza <b>powtórki</b> (${due} czeka), <b>nowe słowa</b> (${S.pace}) oraz krótkie zadania z <b>gramatyki</b>.</p>
         <p class="muted small">Im lepiej Ci idzie, tym trudniejsze są ćwiczenia: od wyboru tłumaczenia, przez uzupełnianie zdań, po samodzielne wpisywanie. Skróty: klawisze <kbd>1</kbd>–<kbd>4</kbd> wybierają odpowiedź, <kbd>Enter</kbd> przechodzi dalej.</p>
-        <button class="btn big" id="start">Zaczynamy</button>
+        ${lessonButtons()}
+        <p class="muted small"><b>Szybka</b> – 3 nowe słowa, kilka powtórek i jedno pytanie z gramatyki, idealna do tramwaju. <b>Długa</b> – więcej słów, mini-lekcja gramatyki i więcej ćwiczeń.</p>
       </section>`;
-    $('#start').onclick = () => startSession();
+    bindLessonButtons();
   };
 
   // ---------- sesja ----------
@@ -485,6 +649,7 @@
     const box = $('#task');
     if (task.t === 'learn') return renderLearn(box, task);
     if (task.t === 'gram') return renderGramTask(box, task);
+    if (task.t === 'gramIntro') return renderGramIntro(box, task);
     return renderQuiz(box, task);
   }
   function nextTask() { SESSION.idx++; renderTask(); }
@@ -609,6 +774,15 @@
     if (!ok || it.phrase) speak(it.en);
   }
 
+  function renderGramIntro(box, task) {
+    const topic = GRAMMAR_BY_ID[task.topic];
+    box.innerHTML = `<div class="badge gram">🧩 Mini-lekcja gramatyki</div>
+      <h2>${h(topic.title)}</h2><div class="lesson">${topic.intro}</div>
+      <div class="actions"><button class="btn" id="go">Rozumiem – ćwiczymy ↵</button></div>`;
+    $('#go').onclick = nextTask;
+    KEYH = e => { if (e.key === 'Enter') nextTask(); };
+  }
+
   function renderGramTask(box, task) {
     const topic = GRAMMAR_BY_ID[task.topic];
     const head = `<div class="badge gram">🧩 Gramatyka · ${h(topic.title)}</div>`;
@@ -672,7 +846,7 @@
           <a class="btn ghost" href="#/${cur}/home">Postępy</a>
         </div>
       </section>`;
-    $('#again').onclick = () => startSession(s.deck);
+    $('#again').onclick = () => startSession(s.deck, s.size);
     KEYH = null;
   }
 
@@ -885,11 +1059,11 @@
 
   // ---------- czytanie ----------
   VIEWS.read = function (id) {
-    const list = READINGS[cur] || [];
+    const list = readingsFor();
     const r = list.find(x => x.id === id);
     if (!r) {
       $('#view').innerHTML = `<section class="card"><h1>📖 Czytanie</h1>
-        <p class="muted">Teksty z Twojej dziedziny – od prostych po specjalistyczne. Najedź lub kliknij podkreślone słowo, aby zobaczyć tłumaczenie.</p>
+        <p class="muted">Teksty z Twojej dziedziny oraz z życia (Wrocław, snowboard, gotowanie) – od prostych po specjalistyczne. Najedź lub kliknij podkreślone słowo, aby zobaczyć tłumaczenie.</p>
         <div class="rlist">${list.map(x => {
           const rs = S.reading[x.id];
           return `<a class="rcard ${x.lvl > S.level ? 'locked' : ''}" href="#/${cur}/read/${x.id}">
@@ -1009,7 +1183,7 @@
       <div class="ptres">${[1, 2, 3, 4].map(l => `<div><span class="pill sm">${LEVELS[l]}</span> ${PT.score[l]}/6</div>`).join('')}</div>
       <p class="muted small">Słowa z niższych poziomów i tak będą się pojawiać (ok. 40% nowości), żeby utrwalić podstawy.</p>
       <div class="actions center"><button class="btn big" id="go2">⚡ Zacznij trening</button></div></div>`;
-    $('#go2').onclick = () => startSession();
+    $('#go2').onclick = () => startSession(null, 'normal');
     KEYH = null;
   }
 
@@ -1029,8 +1203,10 @@
             <small class="muted">Też dostosowuje się automatycznie: przy ≥ 90% poprawnych przyspiesza, przy &lt; 60% zwalnia.</small>
           </label>
         </div>
-        <h2 class="mt">Kopia postępów</h2>
-        <p class="muted small">Postępy są zapisane w tej przeglądarce. Aby przenieść je na inne urządzenie, wyeksportuj plik i zaimportuj go tam.</p>
+        <h2 class="mt">Synchronizacja i kopia</h2>
+        ${SYNC.on
+          ? `<p class="small">☁️ Postępy synchronizują się automatycznie między komputerem i telefonem${SYNC.me && SYNC.me.email ? ` (konto <b>${h(SYNC.me.email)}</b>)` : ''}. <button class="link" id="syncnow">Synchronizuj teraz</button></p>`
+          : '<p class="muted small">Postępy są zapisane w tej przeglądarce. Aby przenieść je na inne urządzenie, wyeksportuj plik i zaimportuj go tam.</p>'}
         <div class="row-gap">
           <button class="btn ghost" id="exp">⬇️ Eksportuj</button>
           <label class="btn ghost file">⬆️ Importuj<input type="file" id="imp" accept="application/json,.json" hidden></label>
@@ -1040,6 +1216,7 @@
         <button class="btn danger" id="reset">Wyzeruj postępy (${p.name})</button>
         <div id="msg"></div>
       </section>`;
+    if ($('#syncnow')) $('#syncnow').onclick = () => { setDirty(cur, true); syncNow(cur).then(() => flash(SYNC.error ? 'Brak połączenia z serwerem.' : 'Zsynchronizowano ✔', SYNC.error)); };
     $('#lvl').onchange = e => { S.level = +e.target.value; S.log.push({ d: today(), lvl: S.level, manual: true }); save(); flash('Zapisano poziom.'); };
     $('#pace').oninput = e => { $('#pv').textContent = e.target.value; };
     $('#pace').onchange = e => { S.pace = +e.target.value; save(); flash('Zapisano tempo.'); };
@@ -1060,12 +1237,14 @@
         if (data.profile !== cur && !confirm(`Ten plik należy do profilu „${(PROFILES[data.profile] || {}).name || data.profile}”. Wczytać go mimo to do profilu ${p.name}?`)) return;
         S = Object.assign(defaultState(), data.state);
         save();
+        SYNC.force[cur] = true; syncNow(cur);
         flash('Zaimportowano postępy ✔');
       }).catch(() => flash('Nie udało się wczytać pliku – to nie jest kopia Ponglisz.', true));
     };
     $('#reset').onclick = () => {
       if (!confirm(`Na pewno usunąć wszystkie postępy profilu ${p.name}? Tego nie da się cofnąć (chyba że masz eksport).`)) return;
-      S = defaultState(); save(); SESSION = null; flash('Postępy wyzerowane.');
+      S = defaultState(); save(); SESSION = null;
+      SYNC.force[cur] = true; syncNow(cur); flash('Postępy wyzerowane.');
     };
     function flash(t, bad) { $('#msg').innerHTML = `<div class="fb ${bad ? 'bad' : 'ok'}">${h(t)}</div>`; }
   };
@@ -1085,24 +1264,23 @@
   });
   window.addEventListener('hashchange', route);
 
-  // Zalogowany użytkownik (Cloudflare Access) – pokazujemy maila i link do wylogowania.
-  if (location.protocol === 'https:') {
-    fetch('/cdn-cgi/access/get-identity', { credentials: 'same-origin' })
-      .then(r => (r.ok ? r.json() : null))
-      .then(id => {
-        if (!id || !id.email) return;
-        const el = $('#who');
-        el.innerHTML = ` · zalogowano jako <b>${h(id.email)}</b> · <a href="/cdn-cgi/access/logout">Wyloguj</a>`;
-        el.hidden = false;
-      })
-      .catch(() => { /* brak Access – nic nie pokazujemy */ });
-  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushOnHide();
+    else if (cur) pullAndRefresh(cur);
+  });
 
   // start
+  const hadHash = !!location.hash && location.hash !== '#/';
   if (!location.hash) {
     let last = null;
     try { last = localStorage.getItem('ponglisz:last'); } catch (e) { /* ignorujemy */ }
     if (last && PROFILES[last]) location.replace('#/' + last + '/home');
   }
   route();
+  syncInit().then(me => {
+    if (!me || !SYNC.on) return;
+    if (me.profile && PROFILES[me.profile] && !hadHash && me.profile !== cur) { go('#/' + me.profile + '/home'); return; }
+    if (cur) pullAndRefresh(cur);
+    Object.keys(PROFILES).filter(p => p !== cur).forEach(p => syncNow(p));
+  });
 })();

@@ -453,3 +453,90 @@ Przeczenie: <i>isn't / aren't</i>, pytanie: <i>Is it…? Are they…?</i></p>
     ]
   }
 ];
+
+/* Dodatkowe przykłady z życia: Wrocław, snowboard, gotowanie. */
+(function () {
+  const extra = {
+    'be-present': [
+      { q: "Wrocław ___ more than a hundred bridges.", o: ["have", "has", "is having", "haves"], a: 1 },
+      { q: "How often ___ you go snowboarding?", o: ["do", "does", "are", "is"], a: 0 }
+    ],
+    'pres-cont': [
+      { q: "Shh! Grandma ___ the dough for pierogi.", o: ["kneads", "is kneading", "knead", "kneading"], a: 1 },
+      { q: "Every winter we ___ to the mountains.", o: ["go", "are going", "goes", "going"], a: 0 }
+    ],
+    'past-simple': [
+      { q: "Last winter I ___ snowboarding for the first time.", o: ["try", "tried", "tryed", "have tried"], a: 1 },
+      { q: "We ___ a lot of dwarfs in the market square yesterday.", o: ["see", "saw", "seen", "seed"], a: 1 }
+    ],
+    'articles': [
+      { q: "Let's meet in ___ market square at six.", o: ["a", "the", "—", "an"], a: 1, e: "Konkretny, znany obu stronom rynek → the." },
+      { q: "I'd like to buy ___ ski pass for one day.", o: ["a", "the", "an", "—"], a: 0 }
+    ],
+    'quantifiers': [
+      { q: "Add ___ salt to the soup.", o: ["a few", "a little", "many", "few"], a: 1 },
+      { q: "How ___ dwarfs are there in Wrocław?", o: ["much", "many", "lot", "little"], a: 1 }
+    ],
+    'comparatives': [
+      { q: "The black run is ___ than the red one.", o: ["steeper", "more steep", "steepest", "most steep"], a: 0 },
+      { q: "Wrocław is the ___ city in Lower Silesia.", o: ["largest", "larger", "most large", "large"], a: 0 }
+    ],
+    'future': [
+      { q: "Look at the sky! It ___ snow.", o: ["will", "is going to", "snows", "is snowing to"], a: 1 },
+      { q: "I'm hungry. – I ___ make you a sandwich.", o: ["'ll", "'m going", "make", "'m making"], a: 0 }
+    ],
+    'present-perfect': [
+      { q: "Have you ever ___ to the Centennial Hall?", o: ["be", "been", "was", "went"], a: 1 },
+      { q: "I ___ pierogi three times this month.", o: ["have made", "made ago", "make", "have make"], a: 0 }
+    ],
+    'modals': [
+      { q: "You ___ wear a helmet – it's much safer.", o: ["should", "should to", "have", "musts"], a: 0 },
+      { q: "Beginners ___ go on the black run – it's too dangerous.", o: ["mustn't", "don't have to", "needn't", "might"], a: 0 }
+    ],
+    'prepositions': [
+      { q: "We went snowboarding ___ February.", o: ["on", "in", "at", "by"], a: 1 },
+      { q: "Let's meet ___ the entrance to the zoo.", o: ["in", "on", "at", "by"], a: 2 }
+    ],
+    'past-cont': [
+      { q: "I ___ down the slope when I fell.", o: ["rode", "was riding", "ride", "were riding"], a: 1 },
+      { q: "While I ___, my brother set the table.", o: ["was cooking", "cooked", "cooking", "were cooking"], a: 0 }
+    ],
+    'cond-01': [
+      { q: "If you boil pierogi too long, they ___ apart.", o: ["fall", "will falling", "fell", "would fall"], a: 0 },
+      { q: "If there is fresh snow tomorrow, we ___ to the mountains.", o: ["go", "will go", "would go", "went"], a: 1 }
+    ],
+    'cond-23': [
+      { q: "If I lived in the old town, I ___ by the river every day.", o: ["walk", "would walk", "will walk", "walked"], a: 1 },
+      { q: "If I had taken lessons, I ___ so many times.", o: ["wouldn't fall", "wouldn't have fallen", "didn't fall", "won't fall"], a: 1 }
+    ],
+    'passive': [
+      { q: "The Centennial Hall ___ in 1913.", o: ["built", "was built", "is built", "has built"], a: 1 },
+      { q: "Pierogi ___ with many different fillings.", o: ["make", "are made", "is made", "making"], a: 1 }
+    ],
+    'relative': [
+      { q: "Ostrów Tumski is the place ___ a lamplighter lights the lamps every evening.", o: ["which", "where", "who", "whose"], a: 1 },
+      { q: "The instructor ___ taught me to carve was from Austria.", o: ["which", "who", "whose", "where"], a: 1 }
+    ],
+    'gerund-inf': [
+      { q: "I can't stand ___ in long queues for the chairlift.", o: ["wait", "waiting", "to waiting", "waited"], a: 1 },
+      { q: "We decided ___ pierogi for dinner.", o: ["making", "to make", "make", "made"], a: 1 }
+    ],
+    'ppc': [
+      { q: "I ___ snowboarding for three years.", o: ["have been doing", "do", "am doing", "did"], a: 0 },
+      { q: "The soup ___ for two hours – it should be ready.", o: ["has been simmering", "simmers", "is simmer", "simmered"], a: 0 }
+    ],
+    'reported': [
+      { q: "\"The slope is closed.\" → The instructor said that the slope ___ closed.", o: ["is", "was", "has", "be"], a: 1 },
+      { q: "She asked me how long I ___ in Wrocław.", o: ["had lived", "have I lived", "did I live", "do live"], a: 0 }
+    ],
+    'linking': [
+      { q: "___ the fog, we still went snowboarding.", o: ["Although", "Despite", "However", "Because"], a: 1 },
+      { q: "I love sweet pierogi, ___ my sister prefers them with meat.", o: ["whereas", "despite", "therefore", "moreover"], a: 0 }
+    ],
+    'hedging': [
+      { q: "The snow conditions ___ to improve later today.", o: ["are expected", "expect", "are expecting", "expected"], a: 0 },
+      { q: "This ___ be the best restaurant in Wrocław, but I'm not sure.", o: ["might", "must", "has to", "will"], a: 0 }
+    ]
+  };
+  GRAMMAR.forEach(t => { if (extra[t.id]) t.ex.push(...extra[t.id]); });
+})();

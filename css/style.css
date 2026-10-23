@@ -114,7 +114,13 @@ main { padding-top: 20px; padding-bottom: 20px; }
 .bar { height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; flex: 1; }
 .bar.big { height: 12px; margin-top: 6px; }
 .bar span { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), var(--accent-2)); border-radius: 999px; transition: width .4s; }
-.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
+.hero-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 16px; align-items: flex-start; flex-direction: column; }
+.hero-actions p { margin: 0; }
+.lessons { display: flex; gap: 10px; flex-wrap: wrap; justify-content: inherit; }
+.center .lessons { justify-content: center; margin: 14px 0; }
+.lesson-btn { flex-direction: column; gap: 0; padding: 12px 20px; min-width: 150px; }
+.lesson-btn small { font-weight: 400; font-size: .8rem; opacity: .85; }
+@media (max-width: 600px) { .lessons { width: 100%; } .lesson-btn { flex: 1 1 100%; } }
 
 .stats { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; margin-bottom: 16px; }
 .stat { margin: 0; padding: 14px; text-align: center; }
