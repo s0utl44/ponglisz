@@ -27,6 +27,19 @@
     3: 'Średni – praca, raporty, negocjacje',
     4: 'Średnio zaawansowany+ – język specjalistyczny i formalny'
   };
+  // Poziomy jako minerały (Jana) i etapy budowy (Dominik)
+  const MINERALS = {
+    1: { key: 'quartz', pl: 'Kwarc', en: 'Quartz', sub: 'Krzemionka · SiO₂' },
+    2: { key: 'fluorite', pl: 'Fluoryt', en: 'Fluorite', sub: 'Halogenek · CaF₂' },
+    3: { key: 'amethyst', pl: 'Ametyst', en: 'Amethyst', sub: 'Odmiana kwarcu · SiO₂' },
+    4: { key: 'ruby', pl: 'Rubin', en: 'Ruby', sub: 'Odmiana korundu · Al₂O₃' }
+  };
+  const STAGES = {
+    1: { pl: 'Fundamenty', en: 'Foundations' },
+    2: { pl: 'Stan surowy', en: 'Shell & core' },
+    3: { pl: 'Stan deweloperski', en: 'Fit-out' },
+    4: { pl: 'Pod klucz', en: 'Turnkey' }
+  };
   const BOX_DAYS = [0, 1, 2, 4, 7, 14, 30, 60]; // odstępy powtórek (dni) dla kolejnych „pudełek”
   const MASTER_BOX = 4;
   const DAY = 864e5;
@@ -432,6 +445,18 @@
     return msgs;
   }
 
+  // ---------- motyw (ciemny / jasny) ----------
+  function getTheme() { try { return localStorage.getItem('ponglisz:theme') || 'dark'; } catch (e) { return 'dark'; } }
+  function setTheme(t) {
+    document.documentElement.dataset.theme = t;
+    try { localStorage.setItem('ponglisz:theme', t); } catch (e) { /* ignorujemy */ }
+    $$('.theme-toggle button').forEach(b => b.classList.toggle('on', b.dataset.theme === t));
+  }
+  const themeToggle = () => `<div class="theme-toggle" role="group" aria-label="Motyw">
+      <button type="button" data-theme="dark" class="${getTheme() === 'dark' ? 'on' : ''}" aria-label="Ciemny motyw" title="Ciemny">☾</button>
+      <button type="button" data-theme="light" class="${getTheme() === 'light' ? 'on' : ''}" aria-label="Jasny motyw" title="Jasny">☀</button>
+    </div>`;
+
   // ---------- routing ----------
   function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
 
@@ -443,9 +468,11 @@
     KEYH = null;
     if (!PROFILES[pid]) {
       document.body.dataset.profile = '';
+      document.body.classList.add('split-mode');
       renderHeader(null);
       return renderChooser();
     }
+    document.body.classList.remove('split-mode');
     if (pid !== cur) {
       cur = pid; S = load(pid);
       try { localStorage.setItem('ponglisz:last', pid); } catch (e) { /* ignorujemy */ }
@@ -467,35 +494,102 @@
   }
 
   function renderHeader(view) {
-    const tabs = Object.keys(PROFILES).map(id => {
-      const p = PROFILES[id];
-      return `<a class="ptab ${id === cur && view ? 'active' : ''}" data-p="${id}" href="#/${id}/home"><span class="pe">${p.emoji}</span><span><b>${p.name}</b><small>${p.tagline}</small></span></a>`;
-    }).join('');
-    $('#ptabs').innerHTML = tabs;
     const nav = $('#subnav');
-    if (!view) { nav.innerHTML = ''; nav.hidden = true; return; }
+    if (!view) { $('#ptabs').innerHTML = ''; nav.innerHTML = ''; nav.hidden = true; return; }
+    const p = PROFILES[cur];
+    const badge = cur === 'jana' ? MINERALS[S.level].pl : STAGES[S.level].pl;
+    $('#ptabs').innerHTML = `<a class="who-pill" href="#/" title="Zmień kurs">
+        <b>${p.name}</b><span>${LEVELS[S.level]} · ${badge}</span><i>⇄</i></a>${themeToggle()}`;
     nav.hidden = false;
-    const items = [['home', '📊 Postępy'], ['train', '⚡ Trening'], ['words', '📚 Słownictwo'], ['grammar', '🧩 Gramatyka'], ['read', '📖 Czytanie'], ['settings', '⚙️ Ustawienia']];
+    const items = [['home', 'Postępy'], ['train', 'Trening'], ['words', 'Słownictwo'], ['grammar', 'Gramatyka'], ['read', 'Czytanie'], ['settings', 'Ustawienia']];
     nav.innerHTML = items.map(([v, l]) => `<a href="#/${cur}/${v}" class="${v === view ? 'active' : ''}">${l}</a>`).join('');
   }
 
+  // ---------- ekran startowy: podzielony na pół, z suwakiem ----------
   function renderChooser() {
+    const j = load('jana'), d = load('dominik');
+    const jm = MINERALS[j.level];
+    const mastered = st => Object.values(st.cards || {}).filter(c => c.b >= MASTER_BOX).length;
+    const streakOf = st => { let n = 0; const dd = new Date(); if (!st.days[today(dd)]) dd.setDate(dd.getDate() - 1); while (st.days[today(dd)] && st.days[today(dd)].t > 0) { n++; dd.setDate(dd.getDate() - 1); } return n; };
     $('#view').innerHTML = `
-      <section class="chooser">
-        <h1>Kto dziś się uczy?</h1>
-        <p class="muted">Każda osoba ma własny kurs, materiały i zapis postępów.</p>
-        <div class="choose-grid">
-          ${Object.keys(PROFILES).map(id => {
-            const p = PROFILES[id]; const st = load(id);
-            return `<a class="choose card" data-p="${id}" href="#/${id}/home">
-              <div class="big-emoji">${p.emoji}</div>
-              <h2>${p.name}</h2>
-              <p class="muted">${p.tagline}</p>
-              <span class="pill">Poziom ${LEVELS[st.level]}</span>
-            </a>`;
-          }).join('')}
-        </div>
+      <section class="split" id="split" aria-label="Wybór kursu">
+        <a class="pane pane-jana" href="#/jana/home" data-p="jana">
+          <div class="pane-content">
+            <div class="pane-mineral" data-mineral="${jm.key}">${ART.crystal(jm.key)}</div>
+            <span class="eyebrow">Kurs geologiczny</span>
+            <h2 class="jana-title">Jana</h2>
+            <p class="pane-sub">${jm.en} · ${jm.pl} · poziom ${LEVELS[j.level]}</p>
+            <p class="pane-meta">${mastered(j)} słów opanowanych · ${streakOf(j)} dni z rzędu</p>
+          </div>
+        </a>
+        <a class="pane pane-dominik" href="#/dominik/home" data-p="dominik">
+          ${ART.scene('DOMINIK', 'pane-scene')}
+          <p class="pane-tag">Nieruchomości, sprzedaż, umowy – angielski, w którym zamyka się transakcje.</p>
+          <div class="pane-band">
+            <div><small>⌂ Poziom</small><b>${LEVELS[d.level]}</b><em>${STAGES[d.level].pl}</em></div>
+            <div><small>▦ Słowa</small><b>${mastered(d)}</b><em>opanowane</em></div>
+            <div><small>◷ Seria</small><b>${streakOf(d)}</b><em>dni z rzędu</em></div>
+          </div>
+        </a>
+        <div class="split-handle" id="handle" tabindex="0" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="50"
+             aria-label="Przesuń w prawo, aby otworzyć kurs Jany, w lewo – kurs Dominika"><span class="knob">‹ ›</span></div>
+        <div class="split-hint"><span data-h="← Dominik" data-v="↑ Dominik"></span><span>przeciągnij</span><span data-h="Jana →" data-v="Jana ↓"></span></div>
+        <a class="split-logo" href="#/">PONGLISZ</a>
+        <div class="split-theme">${themeToggle()}</div>
       </section>`;
+    ART.upgradePhotos($('#split'));
+    setupSplit();
+  }
+
+  function setupSplit() {
+    const el = $('#split'), handle = $('#handle');
+    let pos = 50, drag = null;
+    const vertical = () => window.innerWidth < window.innerHeight * 0.9;
+    const layout = () => el.classList.toggle('vertical', vertical());
+    layout();
+    const setPos = v => { pos = Math.max(0, Math.min(100, v)); el.style.setProperty('--pos', pos + '%'); handle.setAttribute('aria-valuenow', Math.round(pos)); };
+    const open = pid => {
+      el.classList.remove('dragging');
+      el.classList.add('opening');
+      setPos(pid === 'jana' ? 100 : 0);
+      setTimeout(() => go('#/' + pid + '/home'), 520);
+    };
+    el.addEventListener('pointerdown', e => {
+      if (e.target.closest('.split-theme, .split-logo')) return;
+      drag = { x: e.clientX, y: e.clientY, pos, moved: false };
+      el.classList.add('dragging');
+      try { el.setPointerCapture(e.pointerId); } catch (err) { /* ignorujemy */ }
+    });
+    el.addEventListener('pointermove', e => {
+      if (!drag) return;
+      const r = el.getBoundingClientRect();
+      const delta = vertical() ? (e.clientY - drag.y) / r.height : (e.clientX - drag.x) / r.width;
+      if (Math.abs(delta) > 0.012) drag.moved = true;
+      setPos(drag.pos + delta * 100);
+    });
+    const end = e => {
+      if (!drag) return;
+      const d = drag; drag = null;
+      el.classList.remove('dragging');
+      if (!d.moved) {
+        const r = el.getBoundingClientRect();
+        const frac = vertical() ? (e.clientY - r.top) / r.height : (e.clientX - r.left) / r.width;
+        if (e.target.closest('.split-handle')) return setPos(50);
+        return open(frac * 100 < pos ? 'jana' : 'dominik');
+      }
+      if (pos > 64) open('jana'); else if (pos < 36) open('dominik'); else setPos(50);
+    };
+    el.addEventListener('pointerup', end);
+    el.addEventListener('pointercancel', () => { drag = null; el.classList.remove('dragging'); setPos(50); });
+    // linki w panelach obsługujemy sami (kliknięcie myszą robi to pointerup); klawiatura – Enter na panelu
+    $$('.pane', el).forEach(a => a.addEventListener('click', e => { e.preventDefault(); if (e.detail === 0) open(a.dataset.p); }));
+    handle.addEventListener('keydown', e => {
+      const fwd = vertical() ? ['ArrowDown'] : ['ArrowRight'], back = vertical() ? ['ArrowUp'] : ['ArrowLeft'];
+      if (fwd.includes(e.key)) { e.preventDefault(); setPos(pos + 10); }
+      if (back.includes(e.key)) { e.preventDefault(); setPos(pos - 10); }
+      if (e.key === 'Enter') { if (pos > 55) open('jana'); else if (pos < 45) open('dominik'); }
+    });
+    window.addEventListener('resize', layout);
   }
 
   // ---------- widoki ----------
@@ -544,28 +638,13 @@
       return `<a class="grow" href="#/${cur}/grammar/${t.id}"><span>${m >= 0.8 ? '✅' : m > 0 ? '🟡' : '⚪'} ${h(t.title)}</span><span class="mini"><span style="width:${Math.round(m * 100)}%"></span></span></a>`;
     }).join('');
 
-    $('#view').innerHTML = `
-      <section class="hero card">
-        <div class="hero-top">
-          <div>
-            <h1>Cześć, ${p.name}! ${p.emoji}</h1>
-            <p class="muted">${p.tagline}</p>
-          </div>
-          <div class="lvl-badge" title="${LEVEL_DESC[S.level]}"><small>poziom</small><b>${LEVELS[S.level]}</b></div>
-        </div>
-        <div class="lvl-progress">
-          <div class="row-between small"><span>${LEVEL_DESC[S.level]}</span><span>${S.level < 4 ? 'do ' + LEVELS[S.level + 1] : 'najwyższy poziom kursu'}</span></div>
-          <div class="bar big"><span style="width:${Math.min(100, Math.round(lp / 0.5 * 100))}%"></span></div>
-          <p class="small muted">${S.level < 4
-            ? `Awans, gdy: postęp poziomu ≥ 50% (teraz <b>${pct(lp)}</b>) i skuteczność z ostatnich odpowiedzi ≥ 85% (teraz <b>${S.recent.length ? pct(ra) : '–'}</b>${S.recent.length < 30 ? `, potrzeba jeszcze ${30 - S.recent.length} odpowiedzi` : ''}).`
-            : 'Utrzymuj formę – powtórki pilnują, żeby nic nie uciekło.'}</p>
-        </div>
-        <div class="hero-actions">
-          ${lessonButtons(`<p class="small muted">Czeka ${due} powtórek · ${newCount} nowych słów w pełnej lekcji · gramatyka</p>`)}
-          ${!S.placed ? `<a class="btn ghost" href="#/${cur}/test">🎯 Test poziomujący (5 min)</a>` : ''}
-        </div>
-      </section>
-
+    const criteria = S.level < 4
+      ? `Awans, gdy postęp poziomu ≥ 50% (teraz <b>${pct(lp)}</b>) i skuteczność ≥ 85% (teraz <b>${S.recent.length ? pct(ra) : '–'}</b>${S.recent.length < 30 ? `, jeszcze ${30 - S.recent.length} odpowiedzi` : ''}).`
+      : 'Najwyższy poziom kursu – powtórki pilnują, żeby nic nie uciekło.';
+    const lvlFill = Math.min(100, Math.round(lp / 0.5 * 100));
+    const note = `Czeka ${due} powtórek · ${newCount} nowych słów w pełnej lekcji`;
+    const hero = cur === 'jana' ? heroJana({ lvlFill, criteria, note }) : heroDominik({ lvlFill, criteria, note, totalMastered, st });
+    $('#view').innerHTML = hero + `
       <section class="stats">
         <div class="stat card"><b>${st}</b><span>🔥 dni z rzędu</span></div>
         <div class="stat card"><b>${td.t}</b><span>odpowiedzi dziś</span></div>
@@ -597,11 +676,66 @@
       </section>`;
 
     bindLessonButtons();
+    ART.upgradePhotos($('#view'));
     $$('[data-train]').forEach(b => { b.onclick = () => startSession(b.dataset.train); });
   };
 
-  function lessonButtons(extraNote) {
-    return `<div class="lessons">${Object.keys(SIZES).map(k => `<button class="btn ${k === 'normal' ? '' : 'ghost'} lesson-btn" data-size="${k}">${SIZES[k].label}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
+  function lessonButtons(extraNote, style) {
+    const stones = { quick: 'agate', normal: 'amethyst', long: 'granite' };
+    const cls = k => style === 'stone' ? `stone-btn tex-${stones[k]}` : style === 'glass' ? (k === 'normal' ? 'solid-btn' : 'glass-btn') : `btn ${k === 'normal' ? '' : 'ghost'}`;
+    return `<div class="lessons ${style || ''}">${Object.keys(SIZES).map(k => `<button class="${cls(k)} lesson-btn" data-size="${k}">${SIZES[k].label.replace(/^\S+ /, '')}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
+  }
+
+  function heroJana(o) {
+    const m = MINERALS[S.level];
+    const strata = [1, 2, 3, 4].map(l => {
+      const fill = l < S.level ? 100 : l === S.level ? o.lvlFill : 0;
+      return `<div class="stratum ${l === S.level ? 'cur' : ''} m-${MINERALS[l].key}" title="${LEVELS[l]} – ${MINERALS[l].pl}">
+        <span class="fill" style="width:${fill}%"></span><em>${LEVELS[l]}</em><i>${MINERALS[l].pl}</i></div>`;
+    }).join('');
+    const dots = [1, 2, 3, 4].map(l => `<span class="mdot ${l === S.level ? 'on' : ''} ${l > S.level ? 'locked' : ''}" title="${MINERALS[l].pl}">${ART.crystal(MINERALS[l].key, { small: true })}</span>`).join('');
+    return `
+      <section class="hero-jana">
+        <div class="hj-art">
+          <div class="hj-crystal" data-mineral="${m.key}">${ART.crystal(m.key)}</div>
+          <div class="hj-dots">${dots}</div>
+        </div>
+        <div class="hj-text">
+          <span class="eyebrow">Poziom ${LEVELS[S.level]} · Twój minerał</span>
+          <h1 class="hj-name">${m.pl}</h1>
+          <p class="hj-sub">${m.en} · ${m.sub}</p>
+          <p class="hj-hello">Cześć, Jana! ${LEVEL_DESC[S.level]}.</p>
+          <div class="strata" aria-label="Postęp poziomów">${strata}</div>
+          <p class="small muted">${o.criteria}</p>
+          ${lessonButtons(`<p class="small muted">${o.note}</p>`, 'stone')}
+          ${!S.placed ? `<a class="text-link" href="#/${cur}/test">Test poziomujący (5 min) →</a>` : ''}
+        </div>
+      </section>`;
+  }
+
+  function heroDominik(o) {
+    const stages = [1, 2, 3, 4].map(l => `<li class="${l < S.level ? 'done' : l === S.level ? 'cur' : ''}"><span>${LEVELS[l]}</span>${STAGES[l].pl}</li>`).join('');
+    return `
+      <section class="hero-dom">
+        ${ART.scene('DOMINIK', 'hero-scene')}
+        <div class="hd-top glass">Poziom ${LEVELS[S.level]} · ${STAGES[S.level].pl}</div>
+        ${!S.placed ? `<a class="hd-test glass" href="#/${cur}/test">Test poziomujący ↗</a>` : ''}
+        <p class="hd-tag">Cześć, Dominik! Angielski do pracy w nieruchomościach – od pierwszej rozmowy z klientem po akt notarialny.</p>
+        <div class="hd-lessons">${lessonButtons('', 'glass')}</div>
+      </section>
+      <section class="hd-band">
+        <div class="hd-plan">${ART.blueprint()}</div>
+        <div class="hd-stats">
+          <div class="hd-nums">
+            <div><small>⌂ Poziom</small><b>${LEVELS[S.level]}</b></div>
+            <div><small>▦ Słowa</small><b>${o.totalMastered}</b></div>
+            <div><small>◷ Seria</small><b>${o.st}<sup>dni</sup></b></div>
+          </div>
+          <div class="hd-progress"><span style="width:${o.lvlFill}%"></span></div>
+          <ol class="hd-stages">${stages}</ol>
+          <p class="small muted">${o.criteria} ${o.note}.</p>
+        </div>
+      </section>`;
   }
   function bindLessonButtons() {
     $$('[data-size]').forEach(b => { b.onclick = () => startSession(null, b.dataset.size); });
@@ -1251,6 +1385,8 @@
 
   // ---------- globalne zdarzenia ----------
   document.addEventListener('click', e => {
+    const t = e.target.closest('.theme-toggle button');
+    if (t) { e.preventDefault(); e.stopPropagation(); setTheme(t.dataset.theme); return; }
     const b = e.target.closest('[data-say]');
     if (b) { e.preventDefault(); speak(b.dataset.say); }
   });
@@ -1270,16 +1406,12 @@
   });
 
   // start
-  const hadHash = !!location.hash && location.hash !== '#/';
-  if (!location.hash) {
-    let last = null;
-    try { last = localStorage.getItem('ponglisz:last'); } catch (e) { /* ignorujemy */ }
-    if (last && PROFILES[last]) location.replace('#/' + last + '/home');
-  }
+  ART.applyTextures();
+  setTheme(getTheme());
+  // zawsze startujemy od ekranu z suwakiem
   route();
   syncInit().then(me => {
     if (!me || !SYNC.on) return;
-    if (me.profile && PROFILES[me.profile] && !hadHash && me.profile !== cur) { go('#/' + me.profile + '/home'); return; }
     if (cur) pullAndRefresh(cur);
     Object.keys(PROFILES).filter(p => p !== cur).forEach(p => syncNow(p));
   });

@@ -17,14 +17,7 @@
 body[data-profile="jana"] { --accent: #2f6f57; --accent-2: #c9822a; --accent-soft: #e4efe9; }
 body[data-profile="dominik"] { --accent: #2457b8; --accent-2: #d9822b; --accent-soft: #e5ecfa; }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #141716; --card: #1d2120; --text: #e9ece9; --muted: #9aa49e; --line: #2d3331;
-    --ok-soft: #173826; --bad-soft: #3d1d1d; --shadow: 0 1px 2px rgba(0,0,0,.4);
-  }
-  body[data-profile="jana"] { --accent: #5fb38f; --accent-soft: #1f342b; }
-  body[data-profile="dominik"] { --accent: #6e9cf0; --accent-soft: #1d2a44; }
-}
+
 
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -55,14 +48,11 @@ kbd { font: 600 .75rem ui-monospace, monospace; border: 1px solid var(--line); b
 .ptab .pe { font-size: 1.5rem; }
 .ptab[data-p="jana"].active { border-color: #2f6f57; background: #e4efe9; }
 .ptab[data-p="dominik"].active { border-color: #2457b8; background: #e5ecfa; }
-@media (prefers-color-scheme: dark) {
-  .ptab[data-p="jana"].active { background: #1f342b; border-color: #5fb38f; }
-  .ptab[data-p="dominik"].active { background: #1d2a44; border-color: #6e9cf0; }
-}
+
 .subnav { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 8px; scrollbar-width: none; }
 .subnav::-webkit-scrollbar { display: none; }
 .subnav a { white-space: nowrap; text-decoration: none; color: var(--muted); padding: 6px 12px; border-radius: 999px; font-size: .92rem; }
-.subnav a.active { background: var(--accent); color: #fff; }
+.subnav a.active { background: var(--accent); color: var(--on-accent, #fff); }
 .subnav a:not(.active):hover { background: var(--accent-soft); color: var(--text); }
 
 main { padding-top: 20px; padding-bottom: 20px; }
@@ -76,7 +66,7 @@ main { padding-top: 20px; padding-bottom: 20px; }
 @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
 
 /* przyciski */
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 10px 18px; background: var(--accent); color: #fff; font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; transition: filter .15s, transform .05s; }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; border-radius: 10px; padding: 10px 18px; background: var(--accent); color: var(--on-accent, #fff); font: inherit; font-weight: 600; cursor: pointer; text-decoration: none; transition: filter .15s, transform .05s; }
 .btn:hover { filter: brightness(1.08); }
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: .5; cursor: default; }
@@ -149,7 +139,7 @@ main { padding-top: 20px; padding-bottom: 20px; }
 .stack { display: flex; height: 8px; background: var(--line); border-radius: 999px; overflow: hidden; margin-top: 6px; }
 .stack .m { background: var(--accent); }
 .stack .s { background: var(--accent-soft); }
-@media (prefers-color-scheme: dark) { .stack .s { background: #3a4a43; } }
+
 
 .glist { display: flex; flex-direction: column; gap: 2px; }
 .grow { display: flex; justify-content: space-between; align-items: center; gap: 10px; text-decoration: none; color: var(--text); padding: 6px 8px; border-radius: 8px; font-size: .92rem; }
@@ -164,7 +154,7 @@ main { padding-top: 20px; padding-bottom: 20px; }
 .badge.new { background: #fff1d9; color: #9a5b00; }
 .badge.gram { background: var(--accent-soft); color: var(--accent); }
 .badge.retry { background: var(--bad-soft); color: var(--bad); }
-@media (prefers-color-scheme: dark) { .badge.new { background: #3d2e12; color: #f2c46d; } }
+
 .deck-label { font-size: .82rem; color: var(--muted); margin-bottom: 14px; }
 .qlabel { font-size: .9rem; color: var(--muted); margin-bottom: 4px; }
 .word { font-size: 2rem; font-weight: 700; line-height: 1.2; margin: 4px 0 8px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; letter-spacing: -.01em; }
@@ -206,7 +196,7 @@ main { padding-top: 20px; padding-bottom: 20px; }
 .fb.ok .fb-title { color: var(--ok); }
 .fb.bad .fb-title { color: var(--bad); }
 .fb .example { background: rgba(255,255,255,.5); }
-@media (prefers-color-scheme: dark) { .fb .example { background: rgba(0,0,0,.2); } }
+
 
 .result-ring { --p: 0; width: 140px; height: 140px; border-radius: 50%; margin: 16px auto; display: grid; place-content: center; background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); position: relative; }
 .result-ring::before { content: ""; position: absolute; inset: 12px; background: var(--card); border-radius: 50%; }
@@ -214,14 +204,14 @@ main { padding-top: 20px; padding-bottom: 20px; }
 .result-ring b { font-size: 1.8rem; }
 .adapt { margin: 10px auto; max-width: 520px; padding: 10px 14px; border-radius: 10px; background: var(--accent-soft); }
 .adapt.level { background: #fff1d9; border: 1px solid var(--accent-2); }
-@media (prefers-color-scheme: dark) { .adapt.level { background: #3d2e12; } }
+
 .wrong-list { max-width: 520px; margin: 16px auto 0; text-align: left; }
 .wl { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--line); align-items: center; }
 
 /* słownictwo */
 .chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 14px; }
 .chip { text-decoration: none; color: var(--text); border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; font-size: .9rem; }
-.chip.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.chip.active { background: var(--accent); color: var(--on-accent, #fff); border-color: var(--accent); }
 .toolbar { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .toolbar input { flex: 2 1 220px; font-size: 1rem; }
 .toolbar select { flex: 1 1 140px; font-size: .95rem; }
@@ -236,7 +226,7 @@ main { padding-top: 20px; padding-bottom: 20px; }
 .st.new { background: var(--line); color: var(--muted); }
 .st.learn { background: #fff1d9; color: #9a5b00; }
 .st.ok { background: var(--ok-soft); color: var(--ok); }
-@media (prefers-color-scheme: dark) { .st.learn { background: #3d2e12; color: #f2c46d; } }
+
 
 /* gramatyka */
 .glevel.locked h3 { opacity: .75; }

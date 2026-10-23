@@ -1,19 +1,24 @@
 <!doctype html>
-<html lang="pl">
+<html lang="pl" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Ponglisz – angielski dla Jany i Dominika</title>
   <meta name="description" content="Adaptacyjna nauka angielskiego: geologia i nauki ścisłe (Jana) oraz nieruchomości (Dominik).">
-  <meta name="theme-color" content="#2f6f57">
+  <meta name="theme-color" content="#0b0b0c">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🇬🇧</text></svg>">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Manrope:wght@400;500;600;700&family=Poppins:wght@200;300;400;500&display=swap">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/theme.css">
+  <script>try{document.documentElement.dataset.theme=localStorage.getItem('ponglisz:theme')||'dark'}catch(e){}</script>
 </head>
 <body>
   <header class="top">
     <div class="wrap">
-      <a class="logo" href="#/">Pong<span>lisz</span></a>
-      <nav class="ptabs" id="ptabs" aria-label="Profile"></nav>
+      <a class="logo" href="#/">PONGLISZ</a>
+      <div class="ptabs" id="ptabs"></div>
     </div>
     <nav class="subnav wrap" id="subnav" aria-label="Sekcje" hidden></nav>
   </header>
@@ -30,6 +35,7 @@
   <script src="js/data/decks-life.js"></script>
   <script src="js/data/grammar.js"></script>
   <script src="js/data/readings.js"></script>
+  <script src="js/art.js"></script>
   <script src="js/app.js"></script>
 </body>
 </html>
