@@ -25,10 +25,12 @@ window.ART = (function () {
       [`${ML},${t + w * 0.06} ${MR},${t + w * 0.06} 0,${apex}`, pal.light],
       [`${MR},${t + w * 0.06} ${R},${t} 0,${apex}`, pal.mid]
     ];
-    return `<g transform="translate(${cx} ${base}) rotate(${angle})" opacity="${opacity}">` +
-      faces.map(([p, f]) => `<polygon points="${p}" fill="${f}" stroke="rgba(255,255,255,.28)" stroke-width="0.8" stroke-linejoin="round"/>`).join('') +
+    const polys = faces.map(([p, f]) => `<polygon points="${p}" fill="${f}" stroke="rgba(255,255,255,.28)" stroke-width="0.8" stroke-linejoin="round"/>`).join('');
+    const shine = faces.map(([p]) => `<polygon points="${p}"/>`).join('');
+    return `<g transform="translate(${cx} ${base}) rotate(${angle})" opacity="${opacity}"><g class="pr" style="--i:${prism.n++}">` + polys +
+      `<g fill="url(#${id}s)" class="shine">${shine}</g>` +
       `<line x1="${MR * 0.4}" y1="${t * 0.15}" x2="${MR * 0.4}" y2="${t * 0.85}" stroke="rgba(255,255,255,.55)" stroke-width="1.2" stroke-linecap="round"/>` +
-      `</g>`;
+      `</g></g>`;
   }
 
   function crystal(key, opts) {
@@ -40,17 +42,26 @@ window.ART = (function () {
       [160, 34, 120, -24, 0.75], [250, 30, 110, 22, 0.75], [205, 44, 190, -4, 0.95],
       [140, 38, 135, -38, 0.9], [270, 40, 140, 30, 0.92], [185, 48, 150, -14, 1], [232, 46, 165, 12, 1]
     ];
+    prism.n = 0;
     const body = parts.map(([x, w, hh, a, o]) => prism(x, 330, w, hh, a, pal, id, o)).join('');
-    return `<svg class="crystal" viewBox="40 60 320 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="kryształ">
+    // iskierki przy wierzchołkach
+    const sparks = small ? '' : [[205, 130, 0], [262, 175, 1.3], [150, 190, 2.1], [232, 150, 3.0], [178, 165, 0.7], [290, 205, 2.6]]
+      .map(([x, y, d]) => `<path class="spark" d="M${x} ${y - 7} L${x + 1.6} ${y - 1.6} L${x + 7} ${y} L${x + 1.6} ${y + 1.6} L${x} ${y + 7} L${x - 1.6} ${y + 1.6} L${x - 7} ${y} L${x - 1.6} ${y - 1.6} Z" fill="#fff" style="animation-delay:${d}s"/>`).join('');
+    return `<svg class="crystal${opts && opts.grow ? ' crystal-grow' : ''}" viewBox="40 60 320 320" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="kryształ">
       <defs>
         <linearGradient id="${id}d" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${pal.mid}"/><stop offset="1" stop-color="${pal.dark}"/></linearGradient>
         <linearGradient id="${id}m" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${pal.light}"/><stop offset=".6" stop-color="${pal.mid}"/><stop offset="1" stop-color="${pal.dark}"/></linearGradient>
         <linearGradient id="${id}l" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="${pal.light}"/><stop offset="1" stop-color="${pal.mid}"/></linearGradient>
+        <linearGradient id="${id}s" gradientUnits="userSpaceOnUse" x1="-60" y1="0" x2="60" y2="-40">
+          <stop offset="0" stop-color="#fff" stop-opacity="0"/><stop offset=".5" stop-color="#fff" stop-opacity=".55"/><stop offset="1" stop-color="#fff" stop-opacity="0"/>
+          ${small ? '' : `<animateTransform attributeName="gradientTransform" type="translate" values="-260 0; 260 0; 260 0" keyTimes="0; .45; 1" dur="5.5s" repeatCount="indefinite"/>`}
+        </linearGradient>
         <radialGradient id="${id}g"><stop offset="0" stop-color="${pal.glow}"/><stop offset="1" stop-color="rgba(0,0,0,0)"/></radialGradient>
         <filter id="${id}r"><feTurbulence type="fractalNoise" baseFrequency=".09" numOctaves="3" seed="4"/><feColorMatrix values="0 0 0 0 .1  0 0 0 0 .1  0 0 0 0 .11  0 0 0 .9 0"/><feComposite in2="SourceGraphic" operator="in"/></filter>
       </defs>
       ${small ? '' : `<circle cx="205" cy="230" r="150" fill="url(#${id}g)"/>`}
       ${body}
+      ${sparks}
       <path d="M70 336 Q110 300 160 318 Q205 296 250 316 Q300 300 340 336 L345 360 L60 360 Z" fill="#1b1a1c"/>
       <path d="M70 336 Q110 300 160 318 Q205 296 250 316 Q300 300 340 336 L345 360 L60 360 Z" fill="#555" filter="url(#${id}r)"/>
     </svg>`;
@@ -213,5 +224,38 @@ window.ART = (function () {
     });
   }
 
-  return { crystal, scene, blueprint, applyTextures, upgradePhotos, PALETTES };
+  // ---------- efekty ----------
+  // Unoszący się „pył mineralny” – drobinki w kolorze minerału.
+  function particles(n, color) {
+    let out = '';
+    for (let i = 0; i < n; i++) {
+      const size = 1.5 + Math.random() * 3.5, left = Math.random() * 100, dur = 9 + Math.random() * 12, delay = -Math.random() * dur, drift = (Math.random() - 0.5) * 60;
+      out += `<span style="left:${left.toFixed(1)}%;width:${size.toFixed(1)}px;height:${size.toFixed(1)}px;animation-duration:${dur.toFixed(1)}s;animation-delay:${delay.toFixed(1)}s;--drift:${drift.toFixed(0)}px;--c:${color}"></span>`;
+    }
+    return `<div class="dust" aria-hidden="true">${out}</div>`;
+  }
+  // Wybuch odłamków kryształu z danego punktu ekranu.
+  function burst(x, y, key, n) {
+    if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+    const pal = PALETTES[key] || PALETTES.amethyst;
+    const cols = [pal.light, pal.mid, '#ffffff', pal.mid];
+    const box = document.createElement('div');
+    box.className = 'burst';
+    box.style.left = x + 'px'; box.style.top = y + 'px';
+    for (let i = 0; i < (n || 18); i++) {
+      const a = Math.random() * Math.PI * 2, d = 50 + Math.random() * 110;
+      const s = document.createElement('i');
+      s.style.setProperty('--x', Math.cos(a) * d + 'px');
+      s.style.setProperty('--y', Math.sin(a) * d - 30 + 'px');
+      s.style.setProperty('--r', (Math.random() * 540 - 270) + 'deg');
+      s.style.background = cols[i % cols.length];
+      s.style.width = 5 + Math.random() * 7 + 'px'; s.style.height = 8 + Math.random() * 12 + 'px';
+      s.style.animationDelay = Math.random() * 60 + 'ms';
+      box.appendChild(s);
+    }
+    document.body.appendChild(box);
+    setTimeout(() => box.remove(), 1300);
+  }
+
+  return { crystal, scene, blueprint, applyTextures, upgradePhotos, particles, burst, PALETTES };
 })();

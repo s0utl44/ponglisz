@@ -457,6 +457,51 @@
       <button type="button" data-theme="light" class="${getTheme() === 'light' ? 'on' : ''}" aria-label="Jasny motyw" title="Jasny">☀</button>
     </div>`;
 
+  // ---------- animacje (głównie kurs Jany) ----------
+  const reduceMotion = () => window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  // Liczby „odliczają się” od zera do wartości docelowej.
+  function countUp(root) {
+    $$('[data-count]', root).forEach(el => {
+      const to = parseFloat(el.dataset.count), suffix = el.dataset.suffix || '';
+      if (reduceMotion() || !isFinite(to) || to === 0) { el.textContent = (isFinite(to) ? to : el.textContent) + suffix; return; }
+      const t0 = performance.now(), dur = 900 + Math.min(700, to * 4);
+      const step = now => {
+        const k = Math.min(1, (now - t0) / dur), e = 1 - Math.pow(1 - k, 3);
+        el.textContent = Math.round(to * e) + suffix;
+        if (k < 1) requestAnimationFrame(step);
+      };
+      requestAnimationFrame(step);
+    });
+  }
+  // Reakcja na odpowiedź: odłamki kryształu przy dobrej, potrząśnięcie kartą przy złej.
+  function answerFx(ok, el) {
+    if (cur !== 'jana' || reduceMotion()) return;
+    if (ok && el) {
+      const r = el.getBoundingClientRect();
+      ART.burst(r.left + r.width / 2, r.top + r.height / 2, MINERALS[S.level].key, 20);
+    } else if (!ok) {
+      const t = $('.task');
+      if (t) { t.classList.remove('shake'); void t.offsetWidth; t.classList.add('shake'); }
+    }
+  }
+  // Pełnoekranowe odsłonięcie nowego minerału po awansie.
+  function levelReveal() {
+    if (cur !== 'jana') return;
+    const m = MINERALS[S.level];
+    const ov = document.createElement('div');
+    ov.className = 'reveal';
+    ov.innerHTML = `${ART.particles(40, 'var(--accent)')}<div class="reveal-in">
+      <div class="reveal-crystal">${ART.crystal(m.key, { grow: true })}</div>
+      <span class="eyebrow">Awans na poziom ${LEVELS[S.level]}</span>
+      <h2>${m.pl}</h2><p>${m.en} · ${m.sub}</p>
+      <button class="btn" type="button">Odbieram ✨</button></div>`;
+    document.body.appendChild(ov);
+    const close = () => { ov.classList.add('out'); setTimeout(() => ov.remove(), 400); };
+    $('button', ov).onclick = close;
+    ov.addEventListener('click', e => { if (e.target === ov) close(); });
+    setTimeout(() => { const r = $('.reveal-crystal', ov).getBoundingClientRect(); ART.burst(r.left + r.width / 2, r.top + r.height / 2, m.key, 34); }, 900);
+  }
+
   // ---------- routing ----------
   function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
 
@@ -514,8 +559,9 @@
     $('#view').innerHTML = `
       <section class="split" id="split" aria-label="Wybór kursu">
         <a class="pane pane-jana" href="#/jana/home" data-p="jana">
+          ${ART.particles(26, 'rgba(200,180,255,.9)')}
           <div class="pane-content">
-            <div class="pane-mineral" data-mineral="${jm.key}">${ART.crystal(jm.key)}</div>
+            <div class="pane-mineral" data-mineral="${jm.key}" id="paneMineral">${ART.crystal(jm.key, { grow: true })}</div>
             <span class="eyebrow">Kurs geologiczny</span>
             <h2 class="jana-title">Jana</h2>
             <p class="pane-sub">${jm.en} · ${jm.pl} · poziom ${LEVELS[j.level]}</p>
@@ -539,6 +585,14 @@
       </section>`;
     ART.upgradePhotos($('#split'));
     setupSplit();
+    // kryształ delikatnie podąża za kursorem
+    const pm = $('#paneMineral');
+    if (pm && !reduceMotion()) {
+      $('#split').addEventListener('mousemove', e => {
+        const x = e.clientX / window.innerWidth - 0.5, y = e.clientY / window.innerHeight - 0.5;
+        pm.style.transform = `translate(${x * -18}px, ${y * -12}px) rotate(${x * 4}deg)`;
+      });
+    }
   }
 
   function setupSplit() {
@@ -618,7 +672,7 @@
       const hgt = Math.round(v.t / maxT * 100);
       const acc = v.t ? v.c / v.t : 0;
       const label = x.d.toLocaleDateString('pl-PL', { weekday: 'short' }).slice(0, 2);
-      return `<div class="bcol" title="${x.k}: ${v.t} odpowiedzi, ${v.t ? pct(acc) : '–'} poprawnych">
+      return `<div class="bcol" style="--d:${(days.indexOf(x) * 0.04).toFixed(2)}s" title="${x.k}: ${v.t} odpowiedzi, ${v.t ? pct(acc) : '–'} poprawnych">
         <div class="btrack"><div class="bfill" style="height:${hgt}%"><div class="bok" style="height:${Math.round(acc * 100)}%"></div></div></div>
         <span>${label}</span></div>`;
     }).join('');
@@ -646,12 +700,12 @@
     const hero = cur === 'jana' ? heroJana({ lvlFill, criteria, note }) : heroDominik({ lvlFill, criteria, note, totalMastered, st });
     $('#view').innerHTML = hero + `
       <section class="stats">
-        <div class="stat card"><b>${st}</b><span>🔥 dni z rzędu</span></div>
-        <div class="stat card"><b>${td.t}</b><span>odpowiedzi dziś</span></div>
-        <div class="stat card"><b>${S.recent.length ? pct(ra) : '–'}</b><span>skuteczność (ost. 40)</span></div>
+        <div class="stat card"><b data-count="${st}">${st}</b><span>🔥 dni z rzędu</span></div>
+        <div class="stat card"><b data-count="${td.t}">${td.t}</b><span>odpowiedzi dziś</span></div>
+        <div class="stat card"><b ${S.recent.length ? `data-count="${Math.round(ra * 100)}" data-suffix="%"` : ''}>${S.recent.length ? pct(ra) : '–'}</b><span>skuteczność (ost. 40)</span></div>
         <div class="stat card"><b>${totalMastered}<small>/${totalSeen}</small></b><span>słów opanowanych / poznanych</span></div>
-        <div class="stat card"><b>${S.pace}</b><span>nowych słów na sesję</span></div>
-        <div class="stat card"><b>${S.xp}</b><span>XP</span></div>
+        <div class="stat card"><b data-count="${S.pace}">${S.pace}</b><span>nowych słów na sesję</span></div>
+        <div class="stat card"><b data-count="${S.xp}">${S.xp}</b><span>XP</span></div>
       </section>
 
       <section class="card">
@@ -677,6 +731,7 @@
 
     bindLessonButtons();
     ART.upgradePhotos($('#view'));
+    if (cur === 'jana') { countUp($('#view')); bindMineralPreview(); }
     $$('[data-train]').forEach(b => { b.onclick = () => startSession(b.dataset.train); });
   };
 
@@ -689,6 +744,27 @@
     return `<div class="lessons ${style || ''}">${Object.keys(SIZES).map(k => `<button class="${cls(k)} lesson-btn" data-size="${k}">${SIZES[k].label.replace(/^\S+ /, '')}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
   }
 
+  // Klik w kropkę minerału: podgląd innego kamienia (zablokowane – z informacją, kiedy się odblokują).
+  function bindMineralPreview() {
+    let timer = null;
+    const show = l => {
+      const m = MINERALS[l], box = $('#hjCrystal');
+      if (!box) return;
+      box.dataset.mineral = m.key;
+      box.innerHTML = ART.crystal(m.key, { grow: true });
+      box.classList.toggle('preview-locked', l > S.level);
+      $('#hjName').textContent = m.pl;
+      $('#hjSub').textContent = `${m.en} · ${m.sub}`;
+      $('#hjEyebrow').textContent = l === S.level ? `Poziom ${LEVELS[S.level]} · Twój minerał` : l < S.level ? `Poziom ${LEVELS[l]} · zdobyty` : `Poziom ${LEVELS[l]} · do odblokowania`;
+      $('#hjPreview').textContent = l > S.level ? `Odblokujesz go po awansie na poziom ${LEVELS[l]}.` : '';
+      $$('.mdot').forEach(d => d.classList.toggle('on', +d.dataset.lvl === l));
+      ART.upgradePhotos($('.hero-jana'));
+      clearTimeout(timer);
+      if (l !== S.level) timer = setTimeout(() => show(S.level), 6000);
+    };
+    $$('.mdot').forEach(d => { d.onclick = () => show(+d.dataset.lvl); });
+  }
+
   function heroJana(o) {
     const m = MINERALS[S.level];
     const strata = [1, 2, 3, 4].map(l => {
@@ -696,17 +772,19 @@
       return `<div class="stratum ${l === S.level ? 'cur' : ''} m-${MINERALS[l].key}" title="${LEVELS[l]} – ${MINERALS[l].pl}">
         <span class="fill" style="width:${fill}%"></span><em>${LEVELS[l]}</em><i>${MINERALS[l].pl}</i></div>`;
     }).join('');
-    const dots = [1, 2, 3, 4].map(l => `<span class="mdot ${l === S.level ? 'on' : ''} ${l > S.level ? 'locked' : ''}" title="${MINERALS[l].pl}">${ART.crystal(MINERALS[l].key, { small: true })}</span>`).join('');
+    const dots = [1, 2, 3, 4].map(l => `<button type="button" class="mdot ${l === S.level ? 'on' : ''} ${l > S.level ? 'locked' : ''}" data-lvl="${l}" title="${MINERALS[l].pl}" aria-label="Pokaż minerał ${MINERALS[l].pl}">${ART.crystal(MINERALS[l].key, { small: true })}</button>`).join('');
     return `
       <section class="hero-jana">
+        ${ART.particles(30, 'var(--accent)')}
         <div class="hj-art">
-          <div class="hj-crystal" data-mineral="${m.key}">${ART.crystal(m.key)}</div>
+          <div class="hj-crystal" data-mineral="${m.key}" id="hjCrystal">${ART.crystal(m.key, { grow: true })}</div>
+          <p class="hj-preview small muted" id="hjPreview"></p>
           <div class="hj-dots">${dots}</div>
         </div>
         <div class="hj-text">
-          <span class="eyebrow">Poziom ${LEVELS[S.level]} · Twój minerał</span>
-          <h1 class="hj-name">${m.pl}</h1>
-          <p class="hj-sub">${m.en} · ${m.sub}</p>
+          <span class="eyebrow" id="hjEyebrow">Poziom ${LEVELS[S.level]} · Twój minerał</span>
+          <h1 class="hj-name" id="hjName">${m.pl}</h1>
+          <p class="hj-sub" id="hjSub">${m.en} · ${m.sub}</p>
           <p class="hj-hello">Cześć, Jana! ${LEVEL_DESC[S.level]}.</p>
           <div class="strata" aria-label="Postęp poziomów">${strata}</div>
           <p class="small muted">${o.criteria}</p>
@@ -973,9 +1051,9 @@
     const grade = s.acc >= 0.9 ? 'Rewelacja! 🌟' : s.acc >= 0.75 ? 'Bardzo dobrze! 💪' : s.acc >= 0.6 ? 'Nieźle – tak trzymaj! 👍' : 'Dobra robota, że ćwiczysz – powtórki zrobią swoje. 🌱';
     $('#view').innerHTML = `
       <section class="card center session-end">
-        <div class="end-art">${cur === 'jana' ? ART.crystal(MINERALS[S.level].key, { small: true }) : ART.blueprint()}</div>
+        <div class="end-art">${cur === 'jana' ? ART.crystal(MINERALS[S.level].key, { grow: true }) : ART.blueprint()}</div>
         <h1>${s.n ? grade : 'Sesja zakończona'}</h1>
-        ${s.n ? `<div class="result-ring" style="--p:${Math.round(s.acc * 100)}"><b>${pct(s.acc)}</b><small>${s.ok}/${s.n}</small></div>
+        ${s.n ? `<div class="result-ring" style="--p:${Math.round(s.acc * 100)}"><b data-count="${Math.round(s.acc * 100)}" data-suffix="%">${pct(s.acc)}</b><small>${s.ok}/${s.n}</small></div>
         <p class="muted">+${xp} XP · nowe słowa: ${s.newCount} · powtórki: ${s.revCount}</p>` : '<p class="muted">Nie udzielono odpowiedzi.</p>'}
         ${s.msgs.map(m => `<div class="adapt ${m.k}">${m.t}</div>`).join('')}
         ${s.wrong.length ? `<div class="wrong-list"><h3>Do zapamiętania</h3>${s.wrong.map(i => `<div class="wl"><span>${h(i.en)} ${sayBtn(i.en, 'sm')}</span><span class="muted">${h(i.pl)}</span></div>`).join('')}</div>` : ''}
@@ -985,6 +1063,11 @@
         </div>
       </section>`;
     $('#again').onclick = () => startSession(s.deck, s.size);
+    if (cur === 'jana') {
+      countUp($('#view'));
+      if (s.n && s.acc >= 0.6) setTimeout(() => { const r = $('.result-ring'); if (r) { const b = r.getBoundingClientRect(); ART.burst(b.left + b.width / 2, b.top + b.height / 2, MINERALS[S.level].key, 28); } }, 700);
+      if (!s.revealed && s.msgs.some(m => m.k === 'level')) { s.revealed = true; setTimeout(levelReveal, 1200); }
+    }
     KEYH = null;
   }
 
@@ -995,6 +1078,7 @@
     const pick = i => {
       if (done) return; done = true;
       const ok = i === o.correct;
+      answerFx(ok, $$('.opt', box)[o.correct]);
       $$('.opt', box).forEach((b, j) => {
         b.disabled = true;
         if (j === o.correct) b.classList.add('right');
@@ -1038,6 +1122,7 @@
       const r = giveUp ? { ok: false } : checkTyped(val, o.answers);
       r.hinted = hinted > 0;
       inp.classList.add(r.ok ? 'right' : 'wrong');
+      answerFx(r.ok, inp);
       o.onAnswer(r.ok, r);
     };
     $('form', box).onsubmit = e => { e.preventDefault(); if (inp.value.trim()) submit(inp.value); };
@@ -1073,6 +1158,7 @@
       done = true;
       const ok = norm(built.map(x => x.t).join(' ')) === norm(o.phrase);
       $('#built', box).classList.add(ok ? 'right' : 'wrong');
+      answerFx(ok, $('#built', box));
       $$('.actions button', box).forEach(b => { b.disabled = true; });
       o.onAnswer(ok);
     };
