@@ -682,7 +682,10 @@
 
   function lessonButtons(extraNote, style) {
     const stones = { quick: 'agate', normal: 'amethyst', long: 'granite' };
-    const cls = k => style === 'stone' ? `stone-btn tex-${stones[k]}` : style === 'glass' ? (k === 'normal' ? 'solid-btn' : 'glass-btn') : `btn ${k === 'normal' ? '' : 'ghost'}`;
+    const cls = k => style === 'stone' ? `stone-btn tex-${stones[k]}`
+      : style === 'glass' ? (k === 'normal' ? 'solid-btn' : 'glass-btn')
+      : style === 'dom' ? (k === 'normal' ? 'dom-btn dom-main' : 'dom-btn')
+      : `btn ${k === 'normal' ? '' : 'ghost'}`;
     return `<div class="lessons ${style || ''}">${Object.keys(SIZES).map(k => `<button class="${cls(k)} lesson-btn" data-size="${k}">${SIZES[k].label.replace(/^\S+ /, '')}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
   }
 
@@ -759,7 +762,7 @@
         <h1>⚡ Trening</h1>
         <p>Sesja miesza <b>powtórki</b> (${due} czeka), <b>nowe słowa</b> (${S.pace}) oraz krótkie zadania z <b>gramatyki</b>.</p>
         <p class="muted small">Im lepiej Ci idzie, tym trudniejsze są ćwiczenia: od wyboru tłumaczenia, przez uzupełnianie zdań, po samodzielne wpisywanie. Skróty: klawisze <kbd>1</kbd>–<kbd>4</kbd> wybierają odpowiedź, <kbd>Enter</kbd> przechodzi dalej.</p>
-        ${lessonButtons()}
+        ${lessonButtons('', cur === 'jana' ? 'stone' : 'dom')}
         <p class="muted small"><b>Szybka</b> – 3 nowe słowa, kilka powtórek i jedno pytanie z gramatyki, idealna do tramwaju. <b>Długa</b> – więcej słów, mini-lekcja gramatyki i więcej ćwiczeń.</p>
       </section>`;
     bindLessonButtons();
@@ -969,7 +972,8 @@
     const xp = S.xp - s.xp0;
     const grade = s.acc >= 0.9 ? 'Rewelacja! 🌟' : s.acc >= 0.75 ? 'Bardzo dobrze! 💪' : s.acc >= 0.6 ? 'Nieźle – tak trzymaj! 👍' : 'Dobra robota, że ćwiczysz – powtórki zrobią swoje. 🌱';
     $('#view').innerHTML = `
-      <section class="card center">
+      <section class="card center session-end">
+        <div class="end-art">${cur === 'jana' ? ART.crystal(MINERALS[S.level].key, { small: true }) : ART.blueprint()}</div>
         <h1>${s.n ? grade : 'Sesja zakończona'}</h1>
         ${s.n ? `<div class="result-ring" style="--p:${Math.round(s.acc * 100)}"><b>${pct(s.acc)}</b><small>${s.ok}/${s.n}</small></div>
         <p class="muted">+${xp} XP · nowe słowa: ${s.newCount} · powtórki: ${s.revCount}</p>` : '<p class="muted">Nie udzielono odpowiedzi.</p>'}

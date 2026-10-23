@@ -275,3 +275,101 @@ html[data-theme="light"] .hd-stats { background: #111; }
   .hj-crystal, .knob { animation: none; }
   .split:not(.dragging) { transition: none; }
 }
+
+/* =======================================================================
+   POZOSTAŁE EKRANY (trening, słownik, gramatyka, czytanie, ustawienia)
+   ======================================================================= */
+/* subtelne tło: warstwice dla Jany, siatka planu dla Dominika */
+body[data-profile]::before { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; opacity: .5; }
+body[data-profile="jana"]::before {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='600' height='600' fill='none' stroke='%23888' stroke-opacity='.09'%3E%3Cpath d='M-50 120 C100 60 250 180 400 110 S650 60 700 120'/%3E%3Cpath d='M-50 170 C100 110 250 230 400 160 S650 110 700 170'/%3E%3Cpath d='M-50 220 C110 170 250 280 400 215 S650 160 700 220'/%3E%3Cpath d='M-50 330 C120 290 260 390 410 320 S650 280 700 340'/%3E%3Cpath d='M-50 380 C120 340 260 440 410 370 S650 330 700 390'/%3E%3Cpath d='M-50 500 C130 460 270 560 420 490 S650 450 700 510'/%3E%3C/svg%3E");
+}
+body[data-profile="dominik"]::before {
+  background-image: linear-gradient(rgba(140, 140, 150, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(140, 140, 150, .07) 1px, transparent 1px),
+    linear-gradient(rgba(140, 140, 150, .035) 1px, transparent 1px), linear-gradient(90deg, rgba(140, 140, 150, .035) 1px, transparent 1px);
+  background-size: 120px 120px, 120px 120px, 24px 24px, 24px 24px;
+}
+body.split-mode::before { display: none; }
+
+/* przyciski Dominika poza zdjęciem: beton + ciepłe światło */
+.dom-btn {
+  flex: 1 1 0; display: inline-flex; flex-direction: column; align-items: flex-start; min-width: 0; padding: 14px 20px; border-radius: 4px;
+  border: 1px solid rgba(255, 255, 255, .14); color: #fff; cursor: pointer; font: 600 1rem Manrope, sans-serif;
+  background: linear-gradient(120deg, rgba(255, 255, 255, .08), transparent 50%), var(--tex-concrete); background-size: cover;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 8px 22px rgba(0, 0, 0, .25); transition: transform .15s, filter .15s;
+}
+.dom-btn small { font-weight: 400; font-size: .78rem; opacity: .75; }
+.dom-btn:hover { transform: translateY(-2px); filter: brightness(1.2); }
+.dom-btn.dom-main { background: #f0b36a; color: #1a1006; border-color: #f0b36a; }
+.lessons.dom { gap: 10px; width: 100%; max-width: 620px; margin: 16px auto; }
+.lessons.stone { width: 100%; max-width: 620px; }
+.center .lessons.stone { margin: 16px auto; }
+body[data-profile="dominik"] .btn { border-radius: 4px; text-transform: uppercase; letter-spacing: .06em; font-size: .88rem; }
+body[data-profile="jana"] .btn { border-radius: 999px; }
+.btn.ghost { border-width: 1px; }
+
+/* karta zadania */
+.task { position: relative; overflow: hidden; border-radius: 22px; padding: 30px; }
+body[data-profile="jana"] .task::after {
+  content: ""; position: absolute; right: -60px; top: -60px; width: 220px; height: 220px; border-radius: 50%;
+  background: radial-gradient(closest-side, var(--accent-soft), transparent); pointer-events: none;
+}
+body[data-profile="dominik"] .task { border-radius: 6px; border-top: 3px solid var(--accent); }
+body[data-profile="jana"] .word { font-family: Poppins, sans-serif; font-weight: 400; font-size: 2.3rem; letter-spacing: -.02em; }
+body[data-profile="dominik"] .word { font-weight: 800; letter-spacing: -.02em; }
+.word.pl { font-weight: 500; }
+.tr { color: var(--accent); }
+.qlabel, .deck-label { text-transform: uppercase; letter-spacing: .12em; font-size: .72rem; }
+.opt { border-width: 1px; padding: 14px 16px; border-radius: 14px; transition: border-color .15s, background .15s, transform .1s; }
+body[data-profile="dominik"] .opt { border-radius: 4px; }
+.opt:hover:not(:disabled) { transform: translateX(3px); }
+.opt kbd { background: transparent; }
+.typed input { border-width: 1px; border-radius: 14px; background: var(--card-2); }
+body[data-profile="dominik"] .typed input { border-radius: 4px; }
+.fb { border-radius: 14px; border-width: 1px; }
+.fb .example { background: rgba(0, 0, 0, .12); }
+.blank { border-bottom-width: 2px; }
+.sess-top .bar { height: 4px; }
+body[data-profile="jana"] .bar span { background: linear-gradient(90deg, #9aa7b6, #36b583, #9566d6, #c41d43); background-size: 400% 100%; }
+body[data-profile="dominik"] .bar span { background: #f0b36a; }
+.built { border-width: 1px; }
+
+/* koniec sesji */
+.session-end .end-art { width: 120px; height: 120px; margin: 0 auto 6px; color: var(--text); }
+body[data-profile="dominik"] .session-end .end-art { width: 220px; height: 140px; opacity: .8; }
+.session-end .end-art svg { width: 100%; height: 100%; }
+.result-ring { background: conic-gradient(var(--accent) calc(var(--p) * 1%), var(--line) 0); }
+body[data-profile="jana"] .result-ring b { font-family: Poppins, sans-serif; font-weight: 300; }
+body[data-profile="dominik"] .result-ring b { font-family: Anton, sans-serif; font-weight: 400; font-size: 2.2rem; }
+
+/* słownik */
+.chip { border-radius: 999px; background: var(--card-2); border-color: var(--line); }
+body[data-profile="dominik"] .chip { border-radius: 4px; text-transform: uppercase; font-size: .76rem; letter-spacing: .06em; }
+.toolbar input, .toolbar select { border-width: 1px; background: var(--card-2); border-radius: 12px; }
+.wrow { padding: 14px 6px; }
+.wrow:hover { background: var(--accent-soft); }
+body[data-profile="jana"] .wmain b { font-family: Poppins, sans-serif; font-weight: 500; font-size: 1.05rem; }
+.st.ok { background: var(--ok-soft); }
+
+/* gramatyka i czytanie */
+.gcard { background: var(--card-2); border-radius: 16px; padding: 16px; transition: border-color .15s, transform .15s; }
+.gcard:hover { transform: translateY(-2px); }
+body[data-profile="dominik"] .gcard { border-radius: 4px; }
+.glevel h3 { font-family: inherit; }
+body[data-profile="dominik"] .glevel h3 { font-family: Anton, sans-serif; font-weight: 400; font-size: 1.3rem; letter-spacing: .02em; }
+body[data-profile="jana"] .glevel h3 { font-family: Poppins, sans-serif; font-weight: 400; font-size: 1.2rem; }
+.lesson i { color: var(--accent); }
+.rcard { background: var(--card-2); border-radius: 16px; }
+body[data-profile="dominik"] .rcard { border-radius: 4px; }
+.reading { font-size: 1.12rem; line-height: 1.85; }
+body[data-profile="jana"] .reading { font-family: Poppins, sans-serif; font-weight: 300; }
+.gloss { border-bottom-color: var(--accent); }
+.rqq { border-radius: 14px; background: var(--card-2); }
+.pill { background: var(--accent-soft); color: var(--accent); }
+
+/* ustawienia */
+.form select, .form input[type=range] { background: var(--card-2); border-width: 1px; }
+.btn.danger { background: var(--bad); color: #fff; }
+
+/* stopka */
+.foot { opacity: .8; }
