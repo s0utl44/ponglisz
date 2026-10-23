@@ -1,0 +1,1095 @@
+/* Ponglisz – adaptacyjna nauka angielskiego dla Jany i Dominika.
+   Wszystko działa w przeglądarce; postępy są w localStorage (osobno dla każdej osoby). */
+(function () {
+  'use strict';
+
+  // ---------- konfiguracja ----------
+  const PROFILES = {
+    jana: {
+      name: 'Jana', emoji: '🌋', tagline: 'Geologia · ekologia · nauki ścisłe',
+      decks: ['geology', 'ecology', 'science', 'general', 'phrases']
+    },
+    dominik: {
+      name: 'Dominik', emoji: '🏠', tagline: 'Nieruchomości · sprzedaż · prawo i finanse',
+      decks: ['realestate', 'sales', 'legal', 'general', 'phrases']
+    }
+  };
+  const LEVELS = { 1: 'A2', 2: 'B1', 3: 'B1+', 4: 'B2' };
+  const LEVEL_DESC = {
+    1: 'Podstawy – odświeżamy fundamenty',
+    2: 'Średni niższy – swobodne codzienne rozmowy',
+    3: 'Średni – praca, raporty, negocjacje',
+    4: 'Średnio zaawansowany+ – język specjalistyczny i formalny'
+  };
+  const BOX_DAYS = [0, 1, 2, 4, 7, 14, 30, 60]; // odstępy powtórek (dni) dla kolejnych „pudełek”
+  const MASTER_BOX = 4;
+  const DAY = 864e5;
+  const PACE_MIN = 4, PACE_MAX = 20;
+
+  // ---------- pomocnicze ----------
+  const $ = (s, el) => (el || document).querySelector(s);
+  const $$ = (s, el) => Array.from((el || document).querySelectorAll(s));
+  const h = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const shuffle = a => { a = a.slice(); for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const chunk = (a, n) => { const out = []; for (let i = 0; i < a.length; i += n) out.push(a.slice(i, i + n)); return out; };
+  const pct = x => Math.round(x * 100) + '%';
+  const today = (d) => (d || new Date()).toLocaleDateString('sv');
+  const escRe = s => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+  function lev(a, b) {
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      prev = cur;
+    }
+    return prev[n];
+  }
+  const norm = s => String(s).toLowerCase().replace(/[’‘`]/g, "'").replace(/[.,!?;:"()]/g, '').replace(/\s+/g, ' ').trim();
+  const stripTo = s => s.replace(/^to /, '');
+
+  // ---------- mowa ----------
+  let voice = null;
+  function pickVoice() {
+    if (!('speechSynthesis' in window)) return;
+    const vs = speechSynthesis.getVoices();
+    voice = vs.find(v => /en[-_]GB/i.test(v.lang)) || vs.find(v => /^en/i.test(v.lang)) || null;
+  }
+  if ('speechSynthesis' in window) { pickVoice(); speechSynthesis.onvoiceschanged = pickVoice; }
+  function speak(text) {
+    if (!('speechSynthesis' in window) || !text) return;
+    try {
+      speechSynthesis.cancel();
+      const u = new SpeechSynthesisUtterance(text);
+      u.lang = voice ? voice.lang : 'en-GB';
+      if (voice) u.voice = voice;
+      u.rate = 0.92;
+      speechSynthesis.speak(u);
+    } catch (e) { /* brak syntezy mowy */ }
+  }
+  const sayBtn = (t, cls) => `<button class="speak ${cls || ''}" data-say="${h(t)}" title="Posłuchaj wymowy" aria-label="Posłuchaj">🔊</button>`;
+
+  // ---------- stan ----------
+  let cur = null;   // id profilu
+  let S = null;     // stan profilu
+  let SESSION = null;
+  let KEYH = null;  // bieżąca obsługa klawiatury
+
+  const KEY = id => 'ponglisz:v1:' + id;
+  function defaultState() {
+    return { level: 1, pace: 8, placed: false, cards: {}, grammar: {}, reading: {}, recent: [], days: {}, xp: 0, sessions: 0, log: [] };
+  }
+  function load(id) {
+    try {
+      const raw = localStorage.getItem(KEY(id));
+      if (raw) return Object.assign(defaultState(), JSON.parse(raw));
+    } catch (e) { /* uszkodzone dane – zaczynamy od nowa */ }
+    return defaultState();
+  }
+  function save() {
+    try { localStorage.setItem(KEY(cur), JSON.stringify(S)); } catch (e) { /* brak miejsca / tryb prywatny */ }
+  }
+
+  // ---------- dane ----------
+  function deckItems(deckId) {
+    const d = DECKS[deckId];
+    if (!d._items) {
+      d._items = d.items.map(([en, pl, lvl, ex]) => ({ id: deckId + ':' + en, en, pl, lvl, ex, deck: deckId, phrase: d.kind === 'phrase' }));
+    }
+    return d._items;
+  }
+  const profileDecks = () => PROFILES[cur].decks;
+  const profileItems = () => profileDecks().flatMap(deckItems);
+  const GRAMMAR_BY_ID = {};
+  GRAMMAR.forEach(t => { GRAMMAR_BY_ID[t.id] = t; });
+
+  const cardOf = item => S.cards[item.id];
+  const boxOf = item => (S.cards[item.id] || { b: -1 }).b;
+
+  function gapOf(item) {
+    if (!item.ex || item.phrase) return null;
+    const core = stripTo(item.en);
+    const m = item.ex.match(new RegExp('\\b' + escRe(core) + '\\b', 'i'));
+    if (!m) return null;
+    return { before: item.ex.slice(0, m.index), after: item.ex.slice(m.index + m[0].length), word: m[0] };
+  }
+
+  // ---------- statystyki ----------
+  function logAnswer(ok) {
+    S.recent.push(ok ? 1 : 0);
+    if (S.recent.length > 60) S.recent.shift();
+    const k = today();
+    const d = S.days[k] || (S.days[k] = { c: 0, t: 0 });
+    d.t++;
+    if (ok) { d.c++; S.xp += 10; }
+  }
+  function recentAcc(n) {
+    const r = S.recent.slice(-(n || 40));
+    return r.length ? r.reduce((a, b) => a + b, 0) / r.length : 0;
+  }
+  function streak() {
+    let n = 0;
+    const d = new Date();
+    if (!S.days[today(d)]) d.setDate(d.getDate() - 1);
+    while (S.days[today(d)] && S.days[today(d)].t > 0) { n++; d.setDate(d.getDate() - 1); }
+    return n;
+  }
+  function gMastery(id) {
+    const g = S.grammar[id];
+    if (!g) return 0;
+    const rolling = g.a >= 8 ? g.c / g.a : 0;
+    return Math.max(g.best || 0, rolling);
+  }
+  function levelProgress(lvl) {
+    lvl = lvl || S.level;
+    const items = profileItems().filter(i => i.lvl === lvl);
+    const w = items.length ? items.filter(i => boxOf(i) >= 2).length / items.length : 1;
+    const topics = GRAMMAR.filter(t => t.lvl === lvl);
+    const g = topics.length ? topics.reduce((a, t) => a + Math.min(1, gMastery(t.id) / 0.8), 0) / topics.length : 1;
+    return 0.7 * w + 0.3 * g;
+  }
+  function deckStats(deckId) {
+    const items = deckItems(deckId);
+    let seen = 0, mastered = 0;
+    items.forEach(i => { const b = boxOf(i); if (b >= 0) seen++; if (b >= MASTER_BOX) mastered++; });
+    return { total: items.length, seen, mastered };
+  }
+  function dueCount(deck) {
+    const now = Date.now();
+    return profileItems().filter(i => (!deck || i.deck === deck) && S.cards[i.id] && S.cards[i.id].d <= now).length;
+  }
+
+  // ---------- planowanie powtórek ----------
+  function gradeCard(item, ok, fast, known) {
+    const c = S.cards[item.id] || (S.cards[item.id] = { b: 0, d: 0, s: 0, c: 0, w: 0 });
+    c.s++; c.l = Date.now();
+    if (ok) {
+      c.c++;
+      let nb = c.b + 1 + (fast && c.b >= 1 ? 1 : 0);
+      if (known) nb = Math.max(nb, 3);
+      c.b = Math.min(BOX_DAYS.length - 1, nb);
+    } else {
+      c.w++;
+      c.b = Math.max(0, c.b - 2);
+    }
+    c.d = Date.now() + (c.b === 0 ? 10 * 60e3 : BOX_DAYS[c.b] * DAY - 4 * 3600e3);
+  }
+
+  // Wybór słówek z różnych talii – talie dziedzinowe mają większą wagę.
+  function pickBalanced(pool, n) {
+    if (n <= 0 || !pool.length) return [];
+    const byDeck = {};
+    shuffle(pool).sort((a, b) => a.lvl - b.lvl).forEach(i => { (byDeck[i.deck] = byDeck[i.deck] || []).push(i); });
+    const taken = {};
+    const out = [];
+    while (out.length < n) {
+      let best = null, bestScore = -1;
+      Object.keys(byDeck).forEach(d => {
+        if (!byDeck[d].length) return;
+        const score = (DECKS[d].weight || 1) / ((taken[d] || 0) + 1);
+        if (score > bestScore) { bestScore = score; best = d; }
+      });
+      if (!best) break;
+      out.push(byDeck[best].shift());
+      taken[best] = (taken[best] || 0) + 1;
+    }
+    return out;
+  }
+
+  function pickGrammarTasks(n) {
+    const unlocked = GRAMMAR.filter(t => t.lvl <= S.level);
+    if (!unlocked.length) return [];
+    const weakest = unlocked.map(t => ({ t, m: gMastery(t.id) + Math.random() * 0.15 })).sort((a, b) => a.m - b.m).slice(0, 2).map(x => x.t);
+    const out = [];
+    const used = new Set();
+    let k = 0, guard = 0;
+    while (out.length < n && guard++ < 50) {
+      const t = weakest[k++ % weakest.length];
+      const ex = shuffle(t.ex).find(e => !used.has(e));
+      if (!ex) continue;
+      used.add(ex);
+      out.push({ t: 'gram', topic: t.id, ex });
+    }
+    return out;
+  }
+
+  function buildSession(deck) {
+    const now = Date.now();
+    let items = profileItems();
+    if (deck) items = items.filter(i => i.deck === deck);
+
+    const due = shuffle(items.filter(i => S.cards[i.id] && S.cards[i.id].d <= now))
+      .sort((a, b) => S.cards[a.id].b - S.cards[b.id].b).slice(0, 24);
+    const unseen = items.filter(i => !S.cards[i.id]);
+
+    let nNew = S.pace;
+    if (due.length > 16) nNew = Math.max(3, Math.round(nNew / 2)); // dużo powtórek – mniej nowości
+    const curLvl = unseen.filter(i => i.lvl === S.level);
+    const lower = unseen.filter(i => i.lvl < S.level);
+    const nLow = Math.min(lower.length, Math.round(nNew * 0.4));
+    let fresh = pickBalanced(lower, nLow).concat(pickBalanced(curLvl, nNew - nLow));
+    if (fresh.length < nNew) {
+      fresh = fresh.concat(pickBalanced(unseen.filter(i => i.lvl <= S.level && !fresh.includes(i)), nNew - fresh.length));
+    }
+    // Wyzwanie: gdy idzie bardzo dobrze, dorzucamy słowa z wyższego poziomu.
+    let challenge = [];
+    if (S.level < 4 && S.recent.length >= 20 && recentAcc() >= 0.85) {
+      challenge = pickBalanced(unseen.filter(i => i.lvl === S.level + 1), 2);
+    }
+    if (!fresh.length && !due.length) fresh = pickBalanced(unseen, nNew);
+    fresh = fresh.concat(challenge);
+
+    const tasks = [];
+    const rev = due.slice();
+    const gram = deck ? [] : pickGrammarTasks(4);
+    chunk(fresh, 3).forEach(g => {
+      g.forEach(i => tasks.push({ t: 'learn', item: i, challenge: challenge.includes(i) }));
+      rev.splice(0, 2).forEach(i => tasks.push({ t: 'quiz', item: i }));
+      shuffle(g).forEach(i => tasks.push({ t: 'quiz', item: i, first: true }));
+      if (gram.length) tasks.push(gram.shift());
+    });
+    rev.forEach((i, k) => {
+      tasks.push({ t: 'quiz', item: i });
+      if (k % 4 === 3 && gram.length) tasks.push(gram.shift());
+    });
+    gram.forEach(g => tasks.push(g));
+
+    return { pid: cur, tasks, idx: 0, ok: 0, n: 0, wrong: [], requeued: new Set(), deck, newCount: fresh.length, revCount: due.length, xp0: S.xp };
+  }
+
+  // ---------- adaptacja ----------
+  function adapt(acc, n) {
+    const msgs = [];
+    if (n >= 8) {
+      if (acc >= 0.9 && S.pace < PACE_MAX) {
+        S.pace = Math.min(PACE_MAX, S.pace + 2);
+        msgs.push({ k: 'up', t: `Świetny wynik! Przyspieszam – teraz <b>${S.pace}</b> nowych słów na sesję.` });
+      } else if (acc < 0.6 && S.pace > PACE_MIN) {
+        S.pace = Math.max(PACE_MIN, S.pace - 2);
+        msgs.push({ k: 'down', t: `Zwalniam trochę (<b>${S.pace}</b> nowych słów na sesję), żeby lepiej utrwalić materiał.` });
+      }
+    }
+    const ra = recentAcc(40), lp = levelProgress();
+    if (S.level < 4 && S.recent.length >= 30 && ra >= 0.85 && lp >= 0.5) {
+      S.level++;
+      S.recent = S.recent.slice(-10);
+      S.log.push({ d: today(), lvl: S.level });
+      msgs.push({ k: 'level', t: `🎉 <b>Awans na poziom ${LEVELS[S.level]}!</b> Od teraz pojawią się trudniejsze słowa, ćwiczenia gramatyczne i teksty.` });
+    } else if (S.level > 1 && S.recent.length >= 30 && ra < 0.5) {
+      S.level--;
+      S.recent = S.recent.slice(-10);
+      S.log.push({ d: today(), lvl: S.level });
+      msgs.push({ k: 'down', t: `Wracamy na chwilę do poziomu <b>${LEVELS[S.level]}</b>, żeby wzmocnić podstawy. To normalne – zaraz pójdzie w górę.` });
+    }
+    return msgs;
+  }
+
+  // ---------- routing ----------
+  function go(hash) { if (location.hash === hash) route(); else location.hash = hash; }
+
+  function route() {
+    const parts = location.hash.replace(/^#\/?/, '').split('/');
+    const pid = parts[0];
+    const view = parts[1] || 'home';
+    const arg = parts[2] ? decodeURIComponent(parts[2]) : undefined;
+    KEYH = null;
+    if (!PROFILES[pid]) {
+      document.body.dataset.profile = '';
+      renderHeader(null);
+      return renderChooser();
+    }
+    if (pid !== cur) {
+      cur = pid; S = load(pid);
+      try { localStorage.setItem('ponglisz:last', pid); } catch (e) { /* ignorujemy */ }
+    }
+    document.body.dataset.profile = pid;
+    renderHeader(view);
+    (VIEWS[view] || VIEWS.home)(arg);
+    window.scrollTo(0, 0);
+  }
+
+  function renderHeader(view) {
+    const tabs = Object.keys(PROFILES).map(id => {
+      const p = PROFILES[id];
+      return `<a class="ptab ${id === cur && view ? 'active' : ''}" data-p="${id}" href="#/${id}/home"><span class="pe">${p.emoji}</span><span><b>${p.name}</b><small>${p.tagline}</small></span></a>`;
+    }).join('');
+    $('#ptabs').innerHTML = tabs;
+    const nav = $('#subnav');
+    if (!view) { nav.innerHTML = ''; nav.hidden = true; return; }
+    nav.hidden = false;
+    const items = [['home', '📊 Postępy'], ['train', '⚡ Trening'], ['words', '📚 Słownictwo'], ['grammar', '🧩 Gramatyka'], ['read', '📖 Czytanie'], ['settings', '⚙️ Ustawienia']];
+    nav.innerHTML = items.map(([v, l]) => `<a href="#/${cur}/${v}" class="${v === view ? 'active' : ''}">${l}</a>`).join('');
+  }
+
+  function renderChooser() {
+    $('#view').innerHTML = `
+      <section class="chooser">
+        <h1>Kto dziś się uczy?</h1>
+        <p class="muted">Każda osoba ma własny kurs, materiały i zapis postępów.</p>
+        <div class="choose-grid">
+          ${Object.keys(PROFILES).map(id => {
+            const p = PROFILES[id]; const st = load(id);
+            return `<a class="choose card" data-p="${id}" href="#/${id}/home">
+              <div class="big-emoji">${p.emoji}</div>
+              <h2>${p.name}</h2>
+              <p class="muted">${p.tagline}</p>
+              <span class="pill">Poziom ${LEVELS[st.level]}</span>
+            </a>`;
+          }).join('')}
+        </div>
+      </section>`;
+  }
+
+  // ---------- widoki ----------
+  const VIEWS = {};
+
+  VIEWS.home = function () {
+    const p = PROFILES[cur];
+    const due = dueCount();
+    const lp = levelProgress();
+    const ra = recentAcc(40);
+    const st = streak();
+    const td = S.days[today()] || { c: 0, t: 0 };
+    const totalMastered = profileDecks().reduce((a, d) => a + deckStats(d).mastered, 0);
+    const totalSeen = profileDecks().reduce((a, d) => a + deckStats(d).seen, 0);
+    const newCount = Math.min(S.pace, profileItems().filter(i => !S.cards[i.id]).length);
+    const nextTopic = GRAMMAR.filter(t => t.lvl <= S.level).sort((a, b) => gMastery(a.id) - gMastery(b.id) || a.lvl - b.lvl)[0];
+    const readings = READINGS[cur] || [];
+    const nextRead = readings.find(r => r.lvl <= S.level && !(S.reading[r.id] && S.reading[r.id].best >= 0.75)) || readings.find(r => r.lvl === Math.min(4, S.level + 1));
+
+    // ostatnie 14 dni
+    const days = [];
+    for (let i = 13; i >= 0; i--) { const d = new Date(); d.setDate(d.getDate() - i); days.push({ k: today(d), d }); }
+    const maxT = Math.max(10, ...days.map(x => (S.days[x.k] || { t: 0 }).t));
+    const bars = days.map(x => {
+      const v = S.days[x.k] || { c: 0, t: 0 };
+      const hgt = Math.round(v.t / maxT * 100);
+      const acc = v.t ? v.c / v.t : 0;
+      const label = x.d.toLocaleDateString('pl-PL', { weekday: 'short' }).slice(0, 2);
+      return `<div class="bcol" title="${x.k}: ${v.t} odpowiedzi, ${v.t ? pct(acc) : '–'} poprawnych">
+        <div class="btrack"><div class="bfill" style="height:${hgt}%"><div class="bok" style="height:${Math.round(acc * 100)}%"></div></div></div>
+        <span>${label}</span></div>`;
+    }).join('');
+
+    const deckRows = profileDecks().map(d => {
+      const s = deckStats(d), D = DECKS[d];
+      const dd = dueCount(d);
+      return `<div class="deckrow">
+        <div class="dr-head"><span>${D.icon} <b>${D.title}</b></span><span class="muted small">${s.mastered} opanowane · ${s.seen}/${s.total} poznane${dd ? ` · <b class="due">${dd} do powtórki</b>` : ''}</span></div>
+        <div class="stack"><span class="m" style="width:${s.mastered / s.total * 100}%"></span><span class="s" style="width:${(s.seen - s.mastered) / s.total * 100}%"></span></div>
+        <div class="dr-act"><a href="#/${cur}/words/${d}" class="link">lista słów</a> · <button class="link" data-train="${d}">trenuj tylko tę talię</button></div>
+      </div>`;
+    }).join('');
+
+    const gramRows = GRAMMAR.filter(t => t.lvl <= S.level).map(t => {
+      const m = gMastery(t.id);
+      return `<a class="grow" href="#/${cur}/grammar/${t.id}"><span>${m >= 0.8 ? '✅' : m > 0 ? '🟡' : '⚪'} ${h(t.title)}</span><span class="mini"><span style="width:${Math.round(m * 100)}%"></span></span></a>`;
+    }).join('');
+
+    $('#view').innerHTML = `
+      <section class="hero card">
+        <div class="hero-top">
+          <div>
+            <h1>Cześć, ${p.name}! ${p.emoji}</h1>
+            <p class="muted">${p.tagline}</p>
+          </div>
+          <div class="lvl-badge" title="${LEVEL_DESC[S.level]}"><small>poziom</small><b>${LEVELS[S.level]}</b></div>
+        </div>
+        <div class="lvl-progress">
+          <div class="row-between small"><span>${LEVEL_DESC[S.level]}</span><span>${S.level < 4 ? 'do ' + LEVELS[S.level + 1] : 'najwyższy poziom kursu'}</span></div>
+          <div class="bar big"><span style="width:${Math.min(100, Math.round(lp / 0.5 * 100))}%"></span></div>
+          <p class="small muted">${S.level < 4
+            ? `Awans, gdy: postęp poziomu ≥ 50% (teraz <b>${pct(lp)}</b>) i skuteczność z ostatnich odpowiedzi ≥ 85% (teraz <b>${S.recent.length ? pct(ra) : '–'}</b>${S.recent.length < 30 ? `, potrzeba jeszcze ${30 - S.recent.length} odpowiedzi` : ''}).`
+            : 'Utrzymuj formę – powtórki pilnują, żeby nic nie uciekło.'}</p>
+        </div>
+        <div class="hero-actions">
+          <button class="btn big" id="start">⚡ Trening dnia <small>${due} powtórek · ${newCount} nowych · gramatyka</small></button>
+          ${!S.placed ? `<a class="btn ghost" href="#/${cur}/test">🎯 Test poziomujący (5 min)</a>` : ''}
+        </div>
+      </section>
+
+      <section class="stats">
+        <div class="stat card"><b>${st}</b><span>🔥 dni z rzędu</span></div>
+        <div class="stat card"><b>${td.t}</b><span>odpowiedzi dziś</span></div>
+        <div class="stat card"><b>${S.recent.length ? pct(ra) : '–'}</b><span>skuteczność (ost. 40)</span></div>
+        <div class="stat card"><b>${totalMastered}<small>/${totalSeen}</small></b><span>słów opanowanych / poznanych</span></div>
+        <div class="stat card"><b>${S.pace}</b><span>nowych słów na sesję</span></div>
+        <div class="stat card"><b>${S.xp}</b><span>XP</span></div>
+      </section>
+
+      <section class="card">
+        <h2>Ostatnie 14 dni</h2>
+        <div class="chart">${bars}</div>
+        <p class="small muted legend"><span class="lg a"></span> poprawne <span class="lg b"></span> wszystkie odpowiedzi</p>
+      </section>
+
+      <section class="grid2">
+        <div class="card">
+          <h2>Słownictwo</h2>
+          ${deckRows}
+          <p class="small muted legend"><span class="lg a"></span> opanowane <span class="lg b"></span> w trakcie nauki</p>
+        </div>
+        <div class="card">
+          <h2>Gramatyka</h2>
+          ${nextTopic ? `<p>Polecany temat: <a href="#/${cur}/grammar/${nextTopic.id}"><b>${h(nextTopic.title)}</b></a></p>` : ''}
+          <div class="glist">${gramRows}</div>
+          <p class="small muted">Kolejne tematy odblokują się po awansie. Wszystkie znajdziesz w zakładce Gramatyka.</p>
+          ${nextRead ? `<h2 class="mt">Czytanie</h2><p>Następny tekst: <a href="#/${cur}/read/${nextRead.id}"><b>${h(nextRead.title)}</b></a> <span class="pill sm">${LEVELS[nextRead.lvl]}</span></p>` : ''}
+        </div>
+      </section>`;
+
+    $('#start').onclick = () => startSession();
+    $$('[data-train]').forEach(b => { b.onclick = () => startSession(b.dataset.train); });
+  };
+
+  function startSession(deck) {
+    SESSION = buildSession(deck);
+    if (!SESSION.tasks.length) {
+      SESSION = null;
+      $('#view').innerHTML = `<section class="card center"><h2>Wszystko powtórzone! 🎉</h2><p>W tej talii nie ma teraz nic do nauki. Wróć później albo wybierz inną talię.</p><a class="btn" href="#/${cur}/home">Wróć</a></section>`;
+      return;
+    }
+    if (location.hash !== `#/${cur}/train`) go(`#/${cur}/train`); else renderTask();
+  }
+
+  VIEWS.train = function () {
+    if (SESSION && SESSION.pid === cur && !SESSION.finished) return renderTask();
+    const due = dueCount();
+    $('#view').innerHTML = `
+      <section class="card center">
+        <h1>⚡ Trening</h1>
+        <p>Sesja miesza <b>powtórki</b> (${due} czeka), <b>nowe słowa</b> (${S.pace}) oraz krótkie zadania z <b>gramatyki</b>.</p>
+        <p class="muted small">Im lepiej Ci idzie, tym trudniejsze są ćwiczenia: od wyboru tłumaczenia, przez uzupełnianie zdań, po samodzielne wpisywanie. Skróty: klawisze <kbd>1</kbd>–<kbd>4</kbd> wybierają odpowiedź, <kbd>Enter</kbd> przechodzi dalej.</p>
+        <button class="btn big" id="start">Zaczynamy</button>
+      </section>`;
+    $('#start').onclick = () => startSession();
+  };
+
+  // ---------- sesja ----------
+  function renderTask() {
+    const s = SESSION;
+    if (s.idx >= s.tasks.length) return renderSessionEnd();
+    const task = s.tasks[s.idx];
+    task.t0 = Date.now();
+    const progress = Math.round(s.idx / s.tasks.length * 100);
+    $('#view').innerHTML = `
+      <div class="sess-top">
+        <div class="bar"><span style="width:${progress}%"></span></div>
+        <span class="muted small">${s.idx + 1} / ${s.tasks.length}</span>
+        <button class="link" id="quit">Zakończ</button>
+      </div>
+      <section class="card task" id="task"></section>`;
+    $('#quit').onclick = () => { s.tasks.length = s.idx; renderSessionEnd(); };
+    const box = $('#task');
+    if (task.t === 'learn') return renderLearn(box, task);
+    if (task.t === 'gram') return renderGramTask(box, task);
+    return renderQuiz(box, task);
+  }
+  function nextTask() { SESSION.idx++; renderTask(); }
+
+  function deckLabel(item) {
+    const D = DECKS[item.deck];
+    return `<div class="deck-label">${D.icon} ${D.title} · <span class="pill sm">${LEVELS[item.lvl]}</span></div>`;
+  }
+
+  function renderLearn(box, task) {
+    const it = task.item;
+    box.innerHTML = `
+      <div class="badge new">Nowe ${it.phrase ? 'wyrażenie' : 'słowo'}${task.challenge ? ' · wyzwanie ⚡' : ''}</div>
+      ${deckLabel(it)}
+      <div class="word">${h(it.en)} ${sayBtn(it.en)}</div>
+      <div class="tr">${h(it.pl)}</div>
+      ${it.ex ? `<div class="example">„${h(it.ex)}” ${sayBtn(it.ex, 'sm')}</div>` : ''}
+      <div class="actions">
+        <button class="btn ghost" id="known">Już to znam</button>
+        <button class="btn" id="go">Dalej ↵</button>
+      </div>`;
+    speak(it.en);
+    $('#known').onclick = () => {
+      const q = SESSION.tasks.find((t, i) => i > SESSION.idx && t.t === 'quiz' && t.item === it);
+      if (q) q.known = true;
+      nextTask();
+    };
+    $('#go').onclick = nextTask;
+    KEYH = e => { if (e.key === 'Enter') nextTask(); };
+  }
+
+  function pickMode(item, task) {
+    if (task.retry || (task.first && !task.known)) return 'mc-en';
+    let b = Math.max(0, boxOf(item)) + (task.known ? 2 : 0) + (S.level >= 3 ? 1 : 0);
+    if (item.phrase) return b <= 1 ? 'mc-en' : b === 2 ? 'mc-pl' : 'order';
+    const g = gapOf(item);
+    if (b <= 1) return 'mc-en';
+    if (b === 2) return 'mc-pl';
+    if (b === 3) return g ? 'gap' : 'mc-pl';
+    return g && Math.random() < 0.35 ? 'gap' : 'type';
+  }
+
+  function distractors(item, n, key) {
+    const val = key(item);
+    const pool = deckItems(item.deck).filter(i => i !== item && norm(key(i)) !== norm(val));
+    const near = shuffle(pool.filter(i => Math.abs(i.lvl - item.lvl) <= 1));
+    const far = shuffle(pool.filter(i => Math.abs(i.lvl - item.lvl) > 1));
+    const out = [];
+    for (const i of near.concat(far)) {
+      if (out.length >= n) break;
+      if (!out.some(o => norm(key(o)) === norm(key(i)))) out.push(i);
+    }
+    return out;
+  }
+
+  function renderQuiz(box, task) {
+    const it = task.item;
+    const mode = pickMode(it, task);
+    const head = `${task.retry ? '<div class="badge retry">Jeszcze raz</div>' : ''}${deckLabel(it)}`;
+    const done = (ok, extra) => quizAnswered(task, ok, extra);
+
+    if (mode === 'mc-en' || mode === 'mc-pl' || mode === 'gap') {
+      let prompt, key, correctText;
+      if (mode === 'mc-en') {
+        key = i => i.pl;
+        prompt = `<div class="qlabel">Co to znaczy?</div><div class="word">${h(it.en)} ${sayBtn(it.en)}</div>`;
+        speak(it.en);
+      } else if (mode === 'mc-pl') {
+        key = i => i.en;
+        prompt = `<div class="qlabel">Jak to powiedzieć po angielsku?</div><div class="word pl">${h(it.pl)}</div>`;
+      } else {
+        const g = gapOf(it);
+        key = i => stripTo(i.en);
+        prompt = `<div class="qlabel">Uzupełnij zdanie <span class="muted">(${h(it.pl)})</span></div>
+          <div class="sentence">${h(g.before)}<span class="blank">_____</span>${h(g.after)}</div>`;
+      }
+      const opts = shuffle([it].concat(distractors(it, 3, key)));
+      correctText = key(it);
+      mc(box, {
+        html: head + prompt,
+        options: opts.map(key),
+        correct: opts.indexOf(it),
+        onAnswer: ok => done(ok, { answer: correctText })
+      });
+    } else if (mode === 'type') {
+      const answers = it.en.split(/\s*\/\s*/);
+      typed(box, {
+        html: head + `<div class="qlabel">Wpisz po angielsku</div><div class="word pl">${h(it.pl)}</div>` +
+          (it.ex ? `<div class="hintline muted small">Podpowiedź z kontekstu: „${h(it.ex.replace(new RegExp('\\b' + escRe(stripTo(it.en)) + '\\b', 'ig'), '…'))}”</div>` : ''),
+        answers,
+        onAnswer: (ok, r) => done(ok, { answer: it.en, typo: r && r.typo, hinted: r && r.hinted })
+      });
+    } else if (mode === 'order') {
+      orderEx(box, {
+        html: head + `<div class="qlabel">Ułóż zdanie po angielsku</div><div class="word pl">${h(it.pl)}</div>`,
+        phrase: it.en,
+        onAnswer: ok => done(ok, { answer: it.en })
+      });
+    }
+  }
+
+  function quizAnswered(task, ok, extra) {
+    const s = SESSION, it = task.item;
+    if (!task.retry) {
+      const elapsed = Date.now() - task.t0;
+      const fast = elapsed < 6000 && !(extra && extra.hinted);
+      s.n++; if (ok) s.ok++;
+      logAnswer(ok);
+      gradeCard(it, ok, fast, task.known);
+      save();
+    }
+    if (!ok && !s.requeued.has(it.id)) {
+      s.requeued.add(it.id);
+      s.wrong.push(it);
+      s.tasks.push({ t: 'quiz', item: it, retry: true });
+    }
+    const exHtml = it.ex ? `<div class="example">„${h(it.ex)}” ${sayBtn(it.ex, 'sm')}</div>` : '';
+    const msg = ok
+      ? (extra && extra.typo ? `Prawie idealnie – poprawna pisownia: <b>${h(extra.answer)}</b>` : `<b>${h(it.en)}</b> – ${h(it.pl)}`)
+      : `Poprawnie: <b>${h(it.en)}</b> – ${h(it.pl)}`;
+    feedback(ok, msg + exHtml, nextTask);
+    if (!ok || it.phrase) speak(it.en);
+  }
+
+  function renderGramTask(box, task) {
+    const topic = GRAMMAR_BY_ID[task.topic];
+    const head = `<div class="badge gram">🧩 Gramatyka · ${h(topic.title)}</div>`;
+    gramQuestion(box, head, task.ex, (ok, ans) => {
+      const s = SESSION;
+      s.n++; if (ok) s.ok++;
+      logAnswer(ok);
+      const g = S.grammar[topic.id] || (S.grammar[topic.id] = { a: 0, c: 0, best: 0 });
+      g.a++; if (ok) g.c++;
+      save();
+      feedback(ok, gramFeedback(ok, task.ex, ans, topic), nextTask);
+    });
+  }
+
+  function gramFeedback(ok, ex, ans, topic) {
+    return `${ok ? '' : `Poprawnie: <b>${h(ans)}</b>. `}${ex.e ? h(ex.e) : ''}
+      ${topic && !ok ? `<div class="small"><a href="#/${cur}/grammar/${topic.id}" target="_self">Przypomnij sobie zasady →</a></div>` : ''}`;
+  }
+
+  function fmtQ(q) { return h(q).replace(/_{3,}/g, '<span class="blank">___</span>'); }
+
+  function gramQuestion(box, head, ex, cb) {
+    if (ex.o) {
+      const idx = shuffle(ex.o.map((_, i) => i));
+      mc(box, {
+        html: head + `<div class="sentence">${fmtQ(ex.q)}</div>`,
+        options: idx.map(i => ex.o[i]),
+        correct: idx.indexOf(ex.a),
+        onAnswer: ok => cb(ok, ex.o[ex.a])
+      });
+    } else {
+      typed(box, {
+        html: head + `<div class="sentence">${fmtQ(ex.q)}</div>`,
+        answers: ex.a,
+        loose: false,
+        onAnswer: ok => cb(ok, ex.a[0])
+      });
+    }
+  }
+
+  function renderSessionEnd() {
+    const s = SESSION;
+    if (!s.finished) {
+      s.finished = true;
+      s.acc = s.n ? s.ok / s.n : 0;
+      s.msgs = s.n ? adapt(s.acc, s.n) : [];
+      if (s.n) S.sessions++;
+      save();
+    }
+    const xp = S.xp - s.xp0;
+    const grade = s.acc >= 0.9 ? 'Rewelacja! 🌟' : s.acc >= 0.75 ? 'Bardzo dobrze! 💪' : s.acc >= 0.6 ? 'Nieźle – tak trzymaj! 👍' : 'Dobra robota, że ćwiczysz – powtórki zrobią swoje. 🌱';
+    $('#view').innerHTML = `
+      <section class="card center">
+        <h1>${s.n ? grade : 'Sesja zakończona'}</h1>
+        ${s.n ? `<div class="result-ring" style="--p:${Math.round(s.acc * 100)}"><b>${pct(s.acc)}</b><small>${s.ok}/${s.n}</small></div>
+        <p class="muted">+${xp} XP · nowe słowa: ${s.newCount} · powtórki: ${s.revCount}</p>` : '<p class="muted">Nie udzielono odpowiedzi.</p>'}
+        ${s.msgs.map(m => `<div class="adapt ${m.k}">${m.t}</div>`).join('')}
+        ${s.wrong.length ? `<div class="wrong-list"><h3>Do zapamiętania</h3>${s.wrong.map(i => `<div class="wl"><span>${h(i.en)} ${sayBtn(i.en, 'sm')}</span><span class="muted">${h(i.pl)}</span></div>`).join('')}</div>` : ''}
+        <div class="actions center">
+          <button class="btn" id="again">Kolejna sesja</button>
+          <a class="btn ghost" href="#/${cur}/home">Postępy</a>
+        </div>
+      </section>`;
+    $('#again').onclick = () => startSession(s.deck);
+    KEYH = null;
+  }
+
+  // ---------- typy zadań ----------
+  function mc(box, o) {
+    box.innerHTML = o.html + `<div class="opts">${o.options.map((t, i) => `<button class="opt" data-i="${i}"><kbd>${i + 1}</kbd><span>${h(t)}</span></button>`).join('')}</div><div id="fb"></div>`;
+    let done = false;
+    const pick = i => {
+      if (done) return; done = true;
+      const ok = i === o.correct;
+      $$('.opt', box).forEach((b, j) => {
+        b.disabled = true;
+        if (j === o.correct) b.classList.add('right');
+        else if (j === i) b.classList.add('wrong');
+      });
+      o.onAnswer(ok, i);
+    };
+    $$('.opt', box).forEach(b => { b.onclick = () => pick(+b.dataset.i); });
+    KEYH = e => { const n = parseInt(e.key, 10); if (n >= 1 && n <= o.options.length) pick(n - 1); };
+  }
+
+  function checkTyped(val, answers) {
+    const v = stripTo(norm(val));
+    for (const a of answers) {
+      const t = stripTo(norm(a));
+      if (v === t) return { ok: true };
+    }
+    for (const a of answers) {
+      const t = stripTo(norm(a));
+      const d = lev(v, t);
+      if ((t.length >= 4 && d <= 1) || (t.length >= 9 && d <= 2)) return { ok: true, typo: true };
+    }
+    return { ok: false };
+  }
+
+  function typed(box, o) {
+    box.innerHTML = o.html + `
+      <form class="typed" autocomplete="off">
+        <input id="ans" type="text" autocapitalize="off" autocorrect="off" spellcheck="false" placeholder="Wpisz odpowiedź…" aria-label="Odpowiedź">
+        <button class="btn" type="submit">Sprawdź</button>
+      </form>
+      <div class="row-gap"><button class="link" id="hint" type="button">💡 Podpowiedź</button><button class="link" id="idk" type="button">Nie wiem</button></div>
+      <div id="fb"></div>`;
+    const inp = $('#ans', box);
+    let done = false, hinted = 0;
+    setTimeout(() => inp.focus(), 30);
+    const submit = (val, giveUp) => {
+      if (done) return; done = true;
+      inp.disabled = true;
+      $$('.typed button, #hint, #idk', box).forEach(b => { b.disabled = true; });
+      const r = giveUp ? { ok: false } : checkTyped(val, o.answers);
+      r.hinted = hinted > 0;
+      inp.classList.add(r.ok ? 'right' : 'wrong');
+      o.onAnswer(r.ok, r);
+    };
+    $('form', box).onsubmit = e => { e.preventDefault(); if (inp.value.trim()) submit(inp.value); };
+    $('#hint', box).onclick = () => {
+      hinted++;
+      const a = o.answers[0];
+      inp.value = a.slice(0, Math.min(a.length - 1, hinted * 2));
+      inp.focus();
+    };
+    $('#idk', box).onclick = () => submit('', true);
+    KEYH = null;
+  }
+
+  function orderEx(box, o) {
+    const tokens = o.phrase.split(' ');
+    let pool = tokens.map((t, i) => ({ t, i }));
+    let tries = 0;
+    do { pool = shuffle(pool); } while (tokens.length > 1 && pool.every((x, k) => x.i === k) && tries++ < 10);
+    const built = [];
+    let done = false;
+    box.innerHTML = o.html + `<div class="built" id="built"></div><div class="pool" id="pool"></div>
+      <div class="actions"><button class="btn ghost" id="clr" type="button">Wyczyść</button><button class="btn" id="chk" type="button">Sprawdź</button></div><div id="fb"></div>`;
+    const draw = () => {
+      $('#built', box).innerHTML = built.length ? built.map((x, k) => `<button class="tok on" data-k="${k}">${h(x.t)}</button>`).join('') : '<span class="muted small">Klikaj słowa poniżej w odpowiedniej kolejności…</span>';
+      $('#pool', box).innerHTML = pool.map((x, k) => `<button class="tok" data-k="${k}">${h(x.t)}</button>`).join('');
+      $$('#pool .tok', box).forEach(b => { b.onclick = () => { if (done) return; built.push(pool.splice(+b.dataset.k, 1)[0]); draw(); }; });
+      $$('#built .tok', box).forEach(b => { b.onclick = () => { if (done) return; pool.push(built.splice(+b.dataset.k, 1)[0]); draw(); }; });
+    };
+    draw();
+    $('#clr', box).onclick = () => { if (done) return; pool = pool.concat(built.splice(0)); draw(); };
+    $('#chk', box).onclick = () => {
+      if (done || pool.length) return;
+      done = true;
+      const ok = norm(built.map(x => x.t).join(' ')) === norm(o.phrase);
+      $('#built', box).classList.add(ok ? 'right' : 'wrong');
+      $$('.actions button', box).forEach(b => { b.disabled = true; });
+      o.onAnswer(ok);
+    };
+    KEYH = e => { if (e.key === 'Enter') $('#chk', box).click(); };
+  }
+
+  function feedback(ok, html, onNext) {
+    const fb = $('#fb');
+    let used = false;
+    const go2 = () => { if (used) return; used = true; onNext(); };
+    fb.innerHTML = `<div class="fb ${ok ? 'ok' : 'bad'}"><div class="fb-title">${ok ? '✓ Dobrze!' : '✗ Nie tym razem'}</div><div>${html || ''}</div></div>
+      <div class="actions"><button class="btn" id="nx">Dalej ↵</button></div>`;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    $('#nx').onclick = go2;
+    KEYH = e => { if (e.key === 'Enter') { e.preventDefault(); go2(); } };
+  }
+
+  // ---------- słownictwo ----------
+  VIEWS.words = function (deckArg) {
+    const decks = profileDecks();
+    const deck = decks.includes(deckArg) ? deckArg : decks[0];
+    const items = deckItems(deck);
+    const chips = decks.map(d => `<a class="chip ${d === deck ? 'active' : ''}" href="#/${cur}/words/${d}">${DECKS[d].icon} ${DECKS[d].title}</a>`).join('');
+    $('#view').innerHTML = `
+      <section class="card">
+        <div class="chips">${chips}</div>
+        <div class="toolbar">
+          <input id="q" type="search" placeholder="Szukaj (po angielsku lub polsku)…" aria-label="Szukaj">
+          <select id="lv" aria-label="Poziom"><option value="">Wszystkie poziomy</option>${[1, 2, 3, 4].map(l => `<option value="${l}">${LEVELS[l]}</option>`).join('')}</select>
+          <select id="stf" aria-label="Status"><option value="">Każdy status</option><option value="new">Nowe</option><option value="learn">W nauce</option><option value="ok">Opanowane</option></select>
+          <button class="btn" id="tr">⚡ Trenuj tę talię</button>
+        </div>
+        <div id="list" class="wlist"></div>
+      </section>`;
+    const draw = () => {
+      const q = norm($('#q').value), lv = +$('#lv').value, sf = $('#stf').value;
+      const rows = items.filter(i => {
+        if (lv && i.lvl !== lv) return false;
+        const b = boxOf(i), st = b < 0 ? 'new' : b >= MASTER_BOX ? 'ok' : 'learn';
+        if (sf && st !== sf) return false;
+        return !q || norm(i.en).includes(q) || norm(i.pl).includes(q);
+      }).map(i => {
+        const b = boxOf(i), st = b < 0 ? ['new', 'nowe'] : b >= MASTER_BOX ? ['ok', 'opanowane'] : ['learn', 'w nauce'];
+        return `<div class="wrow">
+          <div class="wmain"><b>${h(i.en)}</b> ${sayBtn(i.en, 'sm')}<span class="pl">${h(i.pl)}</span></div>
+          ${i.ex ? `<div class="wex muted small">${h(i.ex)} ${sayBtn(i.ex, 'xs')}</div>` : ''}
+          <div class="wmeta"><span class="pill sm">${LEVELS[i.lvl]}</span><span class="st ${st[0]}">${st[1]}</span></div>
+        </div>`;
+      });
+      $('#list').innerHTML = rows.length ? rows.join('') : '<p class="muted center">Brak wyników.</p>';
+    };
+    ['input', 'change'].forEach(ev => { $('#q').addEventListener(ev, draw); });
+    $('#lv').onchange = draw; $('#stf').onchange = draw;
+    $('#tr').onclick = () => startSession(deck);
+    draw();
+  };
+
+  // ---------- gramatyka ----------
+  let GQ = null;
+  VIEWS.grammar = function (id) {
+    const topic = GRAMMAR_BY_ID[id];
+    if (!topic) {
+      const groups = [1, 2, 3, 4].map(l => {
+        const ts = GRAMMAR.filter(t => t.lvl === l);
+        return `<div class="glevel ${l > S.level ? 'locked' : ''}">
+          <h3>${LEVELS[l]} <span class="muted small">${LEVEL_DESC[l]}${l > S.level ? ' · 🔒 powyżej Twojego poziomu (możesz zajrzeć)' : ''}</span></h3>
+          <div class="gcards">${ts.map(t => {
+            const m = gMastery(t.id);
+            return `<a class="gcard" href="#/${cur}/grammar/${t.id}"><span>${m >= 0.8 ? '✅' : m > 0 ? '🟡' : '⚪'} ${h(t.title)}</span><span class="mini"><span style="width:${Math.round(m * 100)}%"></span></span><small class="muted">${m ? 'opanowanie ' + pct(m) : 'jeszcze nie ćwiczone'}</small></a>`;
+          }).join('')}</div></div>`;
+      }).join('');
+      $('#view').innerHTML = `<section class="card"><h1>🧩 Gramatyka</h1><p class="muted">Krótkie wyjaśnienia po polsku i test na każdy temat. Temat jest opanowany przy wyniku ≥ 80%.</p>${groups}</section>`;
+      return;
+    }
+    const g = S.grammar[topic.id];
+    $('#view').innerHTML = `
+      <section class="card">
+        <a class="link" href="#/${cur}/grammar">← wszystkie tematy</a>
+        <h1>${h(topic.title)} <span class="pill">${LEVELS[topic.lvl]}</span></h1>
+        <div class="lesson">${topic.intro}</div>
+        <div class="actions"><button class="btn big" id="quiz">Sprawdź się (${topic.ex.length} pytań)</button></div>
+        ${g && g.best ? `<p class="muted small center">Najlepszy wynik: ${pct(g.best)}</p>` : ''}
+      </section>
+      <section class="card task" id="gq" hidden></section>`;
+    $$('.lesson i', $('#view')).forEach(el => {
+      if (el.textContent.length > 6) { el.classList.add('sayable'); el.title = 'Kliknij, aby posłuchać'; el.onclick = () => speak(el.textContent); }
+    });
+    $('#quiz').onclick = () => {
+      GQ = { topic, list: shuffle(topic.ex), idx: 0, ok: 0 };
+      $('#gq').hidden = false;
+      gqNext();
+      $('#gq').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+  };
+
+  function gqNext() {
+    const box = $('#gq');
+    if (!box) return;
+    if (GQ.idx >= GQ.list.length) {
+      const score = GQ.ok / GQ.list.length;
+      const g = S.grammar[GQ.topic.id] || (S.grammar[GQ.topic.id] = { a: 0, c: 0, best: 0 });
+      g.best = Math.max(g.best || 0, score); g.last = score;
+      save();
+      box.innerHTML = `<div class="center"><h2>Wynik: ${GQ.ok}/${GQ.list.length} (${pct(score)})</h2>
+        <p>${score >= 0.8 ? 'Temat opanowany! ✅' : 'Przeczytaj jeszcze raz wyjaśnienie i spróbuj ponownie – trening dnia też będzie podsuwał ten temat.'}</p>
+        <div class="actions center"><button class="btn" id="again">Jeszcze raz</button><a class="btn ghost" href="#/${cur}/grammar">Inne tematy</a></div></div>`;
+      $('#again').onclick = () => { GQ = { topic: GQ.topic, list: shuffle(GQ.topic.ex), idx: 0, ok: 0 }; gqNext(); };
+      KEYH = null;
+      return;
+    }
+    const ex = GQ.list[GQ.idx];
+    const head = `<div class="row-between small muted"><span>Pytanie ${GQ.idx + 1} / ${GQ.list.length}</span><span>✓ ${GQ.ok}</span></div>`;
+    gramQuestion(box, head, ex, (ok, ans) => {
+      if (ok) GQ.ok++;
+      logAnswer(ok);
+      const g = S.grammar[GQ.topic.id] || (S.grammar[GQ.topic.id] = { a: 0, c: 0, best: 0 });
+      g.a++; if (ok) g.c++;
+      save();
+      feedback(ok, gramFeedback(ok, ex, ans, null), () => { GQ.idx++; gqNext(); });
+    });
+  }
+
+  // ---------- czytanie ----------
+  VIEWS.read = function (id) {
+    const list = READINGS[cur] || [];
+    const r = list.find(x => x.id === id);
+    if (!r) {
+      $('#view').innerHTML = `<section class="card"><h1>📖 Czytanie</h1>
+        <p class="muted">Teksty z Twojej dziedziny – od prostych po specjalistyczne. Najedź lub kliknij podkreślone słowo, aby zobaczyć tłumaczenie.</p>
+        <div class="rlist">${list.map(x => {
+          const rs = S.reading[x.id];
+          return `<a class="rcard ${x.lvl > S.level ? 'locked' : ''}" href="#/${cur}/read/${x.id}">
+            <span class="pill">${LEVELS[x.lvl]}</span><b>${h(x.title)}</b>
+            <span class="muted small">${rs ? 'najlepszy wynik: ' + pct(rs.best) : x.lvl > S.level ? 'trudniejszy – spróbuj, jeśli masz ochotę' : 'nieprzeczytany'}</span></a>`;
+        }).join('')}</div></section>`;
+      return;
+    }
+    // podświetlanie słów ze słowniczka
+    let html = h(r.text);
+    const keys = Object.keys(r.gloss).sort((a, b) => b.length - a.length);
+    const marks = [];
+    keys.forEach(k => {
+      const re = new RegExp('\\b(' + escRe(h(k)) + ')\\b', 'i');
+      html = html.replace(re, m => { marks.push(`<span class="gloss" tabindex="0" data-tr="${h(r.gloss[k])}">${m}</span>`); return `\u0000${marks.length - 1}\u0000`; });
+    });
+    html = html.replace(/\u0000(\d+)\u0000/g, (_, n) => marks[+n]);
+    const paras = html.split(/\n\s*\n/).map(p => `<p>${p}</p>`).join('');
+    $('#view').innerHTML = `
+      <section class="card">
+        <a class="link" href="#/${cur}/read">← wszystkie teksty</a>
+        <h1>${h(r.title)} <span class="pill">${LEVELS[r.lvl]}</span></h1>
+        <div class="row-gap"><button class="btn ghost sm" id="listen">🔊 Odsłuchaj tekst</button><button class="btn ghost sm" id="stop">⏹ Stop</button></div>
+        <article class="reading">${paras}</article>
+        <details class="glossary"><summary>Słowniczek (${keys.length})</summary>${keys.map(k => `<div class="wl"><span>${h(k)} ${sayBtn(k, 'xs')}</span><span class="muted">${h(r.gloss[k])}</span></div>`).join('')}</details>
+      </section>
+      <section class="card">
+        <h2>Pytania do tekstu</h2>
+        <div id="rq"></div>
+        <div class="actions"><button class="btn" id="check">Sprawdź odpowiedzi</button></div>
+        <div id="rres"></div>
+      </section>`;
+    $('#listen').onclick = () => speak(r.text);
+    $('#stop').onclick = () => { try { speechSynthesis.cancel(); } catch (e) { /* brak */ } };
+    $$('.gloss').forEach(el => { el.onclick = () => el.classList.toggle('show'); });
+    $('#rq').innerHTML = r.q.map((q, qi) => `
+      <fieldset class="rqq"><legend>${qi + 1}. ${h(q.q)}</legend>
+      ${q.o.map((o, oi) => `<label><input type="radio" name="q${qi}" value="${oi}"> ${h(o)}</label>`).join('')}</fieldset>`).join('');
+    $('#check').onclick = () => {
+      let ok = 0;
+      r.q.forEach((q, qi) => {
+        const sel = $(`input[name=q${qi}]:checked`);
+        const fs = $$('.rqq')[qi];
+        $$('label', fs).forEach((l, oi) => { l.classList.toggle('right', oi === q.a); l.classList.toggle('wrong', !!sel && +sel.value === oi && oi !== q.a); });
+        const good = sel && +sel.value === q.a;
+        if (good) ok++;
+        logAnswer(!!good);
+      });
+      const score = ok / r.q.length;
+      const rs = S.reading[r.id] || (S.reading[r.id] = { best: 0 });
+      rs.best = Math.max(rs.best, score); rs.last = score;
+      save();
+      $('#rres').innerHTML = `<div class="fb ${score >= 0.75 ? 'ok' : 'bad'}"><b>${ok}/${r.q.length}</b> – ${score === 1 ? 'perfekcyjnie!' : score >= 0.75 ? 'bardzo dobrze!' : 'przeczytaj tekst jeszcze raz, korzystając ze słowniczka.'}</div>`;
+      $('#check').disabled = true;
+    };
+  };
+
+  // ---------- test poziomujący ----------
+  let PT = null;
+  VIEWS.test = function () {
+    PT = { qs: [], idx: 0, score: { 1: 0, 2: 0, 3: 0, 4: 0 } };
+    [1, 2, 3, 4].forEach(l => {
+      const pool = shuffle(GRAMMAR.filter(t => t.lvl === l).flatMap(t => t.ex.filter(e => e.o)));
+      pool.slice(0, 4).forEach(ex => PT.qs.push({ lvl: l, ex }));
+      const voc = shuffle(profileItems().filter(i => i.lvl === l && !i.phrase)).slice(0, 2);
+      voc.forEach(it => PT.qs.push({ lvl: l, item: it }));
+    });
+    $('#view').innerHTML = `
+      <section class="card center">
+        <h1>🎯 Test poziomujący</h1>
+        <p>${PT.qs.length} pytań – od łatwych do trudnych. Nie zgaduj na siłę: jeśli nie wiesz, kliknij „Nie wiem”.</p>
+        <p class="muted small">Na podstawie wyniku ustawię Twój poziom startowy. Zawsze możesz go zmienić w Ustawieniach.</p>
+        <button class="btn big" id="go">Start</button>
+      </section>
+      <section class="card task" id="pt" hidden></section>`;
+    $('#go').onclick = () => { $('#go').closest('section').hidden = true; $('#pt').hidden = false; ptNext(); };
+  };
+
+  function ptNext() {
+    const box = $('#pt');
+    if (!box) return;
+    if (PT.idx >= PT.qs.length) return ptFinish(box);
+    const q = PT.qs[PT.idx];
+    const head = `<div class="row-between small muted"><span>Pytanie ${PT.idx + 1} / ${PT.qs.length}</span><span class="pill sm">${LEVELS[q.lvl]}</span></div>`;
+    let ex = q.ex;
+    if (q.item) {
+      const it = q.item;
+      const opts = shuffle([it].concat(distractors(it, 3, i => i.pl)));
+      ex = { q: `Co znaczy: „${it.en}”?`, o: opts.map(i => i.pl).concat(['Nie wiem']), a: opts.indexOf(it) };
+    } else {
+      ex = { q: ex.q, o: ex.o.concat(['Nie wiem']), a: ex.a };
+    }
+    // „Nie wiem” zawsze na końcu
+    const idx = shuffle(ex.o.slice(0, -1).map((_, i) => i)).concat([ex.o.length - 1]);
+    mc(box, {
+      html: head + `<div class="sentence">${fmtQ(ex.q)}</div>`,
+      options: idx.map(i => ex.o[i]),
+      correct: idx.indexOf(ex.a),
+      onAnswer: ok => { if (ok) PT.score[q.lvl]++; setTimeout(() => { PT.idx++; ptNext(); }, 450); }
+    });
+  }
+
+  function ptFinish(box) {
+    let lvl = 1;
+    for (const l of [1, 2, 3]) {
+      if (PT.score[l] >= 4) lvl = l + 1; else break;
+    }
+    S.level = lvl; S.placed = true;
+    S.pace = lvl >= 3 ? 12 : 10;
+    S.log.push({ d: today(), lvl, placement: true });
+    // słowa z poziomów poniżej, które test potwierdził, trafiają od razu do dalszych powtórek
+    PT.qs.forEach(q => { if (q.item && q.lvl < lvl) gradeCard(q.item, true, false, true); });
+    save();
+    box.innerHTML = `<div class="center">
+      <h2>Twój poziom startowy: ${LEVELS[lvl]}</h2>
+      <p>${LEVEL_DESC[lvl]}</p>
+      <div class="ptres">${[1, 2, 3, 4].map(l => `<div><span class="pill sm">${LEVELS[l]}</span> ${PT.score[l]}/6</div>`).join('')}</div>
+      <p class="muted small">Słowa z niższych poziomów i tak będą się pojawiać (ok. 40% nowości), żeby utrwalić podstawy.</p>
+      <div class="actions center"><button class="btn big" id="go2">⚡ Zacznij trening</button></div></div>`;
+    $('#go2').onclick = () => startSession();
+    KEYH = null;
+  }
+
+  // ---------- ustawienia ----------
+  VIEWS.settings = function () {
+    const p = PROFILES[cur];
+    $('#view').innerHTML = `
+      <section class="card">
+        <h1>⚙️ Ustawienia – ${p.name}</h1>
+        <div class="form">
+          <label>Poziom
+            <select id="lvl">${[1, 2, 3, 4].map(l => `<option value="${l}" ${l === S.level ? 'selected' : ''}>${LEVELS[l]} – ${LEVEL_DESC[l]}</option>`).join('')}</select>
+            <small class="muted">Zmienia się sam w zależności od wyników, ale możesz go ustawić ręcznie.</small>
+          </label>
+          <label>Nowe słowa na sesję: <b id="pv">${S.pace}</b>
+            <input type="range" id="pace" min="${PACE_MIN}" max="${PACE_MAX}" step="1" value="${S.pace}">
+            <small class="muted">Też dostosowuje się automatycznie: przy ≥ 90% poprawnych przyspiesza, przy &lt; 60% zwalnia.</small>
+          </label>
+        </div>
+        <h2 class="mt">Kopia postępów</h2>
+        <p class="muted small">Postępy są zapisane w tej przeglądarce. Aby przenieść je na inne urządzenie, wyeksportuj plik i zaimportuj go tam.</p>
+        <div class="row-gap">
+          <button class="btn ghost" id="exp">⬇️ Eksportuj</button>
+          <label class="btn ghost file">⬆️ Importuj<input type="file" id="imp" accept="application/json,.json" hidden></label>
+          <a class="btn ghost" href="#/${cur}/test">🎯 Powtórz test poziomujący</a>
+        </div>
+        <h2 class="mt">Strefa ryzyka</h2>
+        <button class="btn danger" id="reset">Wyzeruj postępy (${p.name})</button>
+        <div id="msg"></div>
+      </section>`;
+    $('#lvl').onchange = e => { S.level = +e.target.value; S.log.push({ d: today(), lvl: S.level, manual: true }); save(); flash('Zapisano poziom.'); };
+    $('#pace').oninput = e => { $('#pv').textContent = e.target.value; };
+    $('#pace').onchange = e => { S.pace = +e.target.value; save(); flash('Zapisano tempo.'); };
+    $('#exp').onclick = () => {
+      const blob = new Blob([JSON.stringify({ app: 'ponglisz', v: 1, profile: cur, exported: new Date().toISOString(), state: S }, null, 1)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = `ponglisz-${cur}-${today()}.json`;
+      document.body.appendChild(a); a.click(); a.remove();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    };
+    $('#imp').onchange = e => {
+      const f = e.target.files[0];
+      if (!f) return;
+      f.text().then(txt => {
+        const data = JSON.parse(txt);
+        if (!data || data.app !== 'ponglisz' || !data.state) throw new Error('format');
+        if (data.profile !== cur && !confirm(`Ten plik należy do profilu „${(PROFILES[data.profile] || {}).name || data.profile}”. Wczytać go mimo to do profilu ${p.name}?`)) return;
+        S = Object.assign(defaultState(), data.state);
+        save();
+        flash('Zaimportowano postępy ✔');
+      }).catch(() => flash('Nie udało się wczytać pliku – to nie jest kopia Ponglisz.', true));
+    };
+    $('#reset').onclick = () => {
+      if (!confirm(`Na pewno usunąć wszystkie postępy profilu ${p.name}? Tego nie da się cofnąć (chyba że masz eksport).`)) return;
+      S = defaultState(); save(); SESSION = null; flash('Postępy wyzerowane.');
+    };
+    function flash(t, bad) { $('#msg').innerHTML = `<div class="fb ${bad ? 'bad' : 'ok'}">${h(t)}</div>`; }
+  };
+
+  // ---------- globalne zdarzenia ----------
+  document.addEventListener('click', e => {
+    const b = e.target.closest('[data-say]');
+    if (b) { e.preventDefault(); speak(b.dataset.say); }
+  });
+  document.addEventListener('keydown', e => {
+    if (!KEYH) return;
+    const tg = e.target.tagName;
+    if (tg === 'INPUT' || tg === 'TEXTAREA' || tg === 'SELECT') return;
+    if (tg === 'BUTTON' && (e.key === 'Enter' || e.key === ' ')) return;
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    KEYH(e);
+  });
+  window.addEventListener('hashchange', route);
+
+  // start
+  if (!location.hash) {
+    let last = null;
+    try { last = localStorage.getItem('ponglisz:last'); } catch (e) { /* ignorujemy */ }
+    if (last && PROFILES[last]) location.replace('#/' + last + '/home');
+  }
+  route();
+})();
