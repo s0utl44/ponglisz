@@ -11,5 +11,9 @@
   },
   // zmienne ustawione w panelu Cloudflare nie znikają przy kolejnych wdrożeniach
   "keep_vars": true,
+  // baza z postępami Jany i Dominika
+  "d1_databases": [
+    { "binding": "DB", "database_name": "ponglisz", "database_id": "4bb583ef-f37a-40e2-80d1-a9ff2cf17fb9" }
+  ],
   "observability": { "enabled": true }
 }
