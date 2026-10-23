@@ -1085,6 +1085,19 @@
   });
   window.addEventListener('hashchange', route);
 
+  // Zalogowany użytkownik (Cloudflare Access) – pokazujemy maila i link do wylogowania.
+  if (location.protocol === 'https:') {
+    fetch('/cdn-cgi/access/get-identity', { credentials: 'same-origin' })
+      .then(r => (r.ok ? r.json() : null))
+      .then(id => {
+        if (!id || !id.email) return;
+        const el = $('#who');
+        el.innerHTML = ` · zalogowano jako <b>${h(id.email)}</b> · <a href="/cdn-cgi/access/logout">Wyloguj</a>`;
+        el.hidden = false;
+      })
+      .catch(() => { /* brak Access – nic nie pokazujemy */ });
+  }
+
   // start
   if (!location.hash) {
     let last = null;

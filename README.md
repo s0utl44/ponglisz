@@ -27,10 +27,25 @@ Obie osoby mają też wspólne podstawy: **codzienny angielski**, **zwroty do ro
 
 ## Uruchomienie
 
-To zwykła strona statyczna (HTML + CSS + JS) – bez instalacji i bez serwera.
+To zwykła strona statyczna (HTML + CSS + JS). Lokalnie wystarczy otworzyć `index.html` w przeglądarce.
 
-- **Lokalnie:** otwórz `index.html` w przeglądarce.
-- **Online (GitHub Pages):** w repozytorium *Settings → Pages → Source: Deploy from a branch → `main` / root*. Strona będzie pod adresem `https://<użytkownik>.github.io/ponglisz/`.
+### Publikacja na ponglisz.io z logowaniem mailem (Cloudflare)
+
+Strona jest hostowana na **Cloudflare Pages**, a **Cloudflare Access** wpuszcza tylko dwa wskazane adresy e-mail
+(logowanie jednorazowym kodem wysyłanym na maila, bez haseł). Plik `functions/_middleware.js` przekierowuje
+wszystkie inne adresy (np. `*.pages.dev`) na `ponglisz.io` i blokuje stronę, dopóki Access nie jest włączony.
+
+1. **Domena w Cloudflare:** dash.cloudflare.com → *Add a domain* → `ponglisz.io` (plan Free) → u rejestratora domeny zmień serwery DNS (nameservers) na te podane przez Cloudflare.
+2. **Hosting:** *Workers & Pages → Create → Pages → Connect to Git* → repozytorium `ponglisz`, gałąź `main`, *Framework preset: None*, polecenie budowania puste, katalog wyjściowy `/`.
+3. **Domena strony:** w projekcie Pages → *Custom domains* → dodaj `ponglisz.io`.
+4. **Logowanie:** *Zero Trust* (przy pierwszym wejściu wybierz plan Free) → *Access → Applications → Add an application → Self-hosted*:
+   - domena: `ponglisz.io`,
+   - polityka: *Action: Allow*, *Include → Emails* → dwa adresy (Jany i Dominika),
+   - metoda logowania: *One-time PIN* (włączona domyślnie),
+   - czas sesji np. 1 miesiąc, żeby nie logować się codziennie.
+5. Jeśli wcześniej włączono **GitHub Pages**, wyłącz je (*Settings → Pages → Unpublish*). W przeciwnym razie strona byłaby dostępna bez logowania pod adresem github.io. Warto też ustawić repozytorium jako prywatne – Cloudflare Pages działa z prywatnymi repozytoriami.
+
+Po zalogowaniu w stopce widać adres e-mail i link **Wyloguj**.
 
 Postępy zapisują się w przeglądarce (`localStorage`), osobno dla każdej osoby. Aby przenieść je na inne urządzenie, użyj **Ustawienia → Eksportuj / Importuj**.
 
