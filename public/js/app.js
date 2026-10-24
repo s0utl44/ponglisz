@@ -7,11 +7,11 @@
   const PROFILES = {
     jana: {
       name: 'Jana', emoji: '🌋', tagline: 'Geologia · ekologia · nauki ścisłe',
-      decks: ['geology', 'ecology', 'science', 'general', 'phrases', 'wroclaw', 'snow', 'cooking']
+      decks: ['geology', 'ecology', 'science', 'kitchen', 'interior', 'utilities', 'homeq', 'general', 'phrases', 'wroclaw', 'snow', 'cooking']
     },
     dominik: {
       name: 'Dominik', emoji: '🏠', tagline: 'Nieruchomości · sprzedaż · prawo i finanse',
-      decks: ['realestate', 'sales', 'legal', 'general', 'phrases', 'wroclaw', 'snow', 'cooking']
+      decks: ['realestate', 'sales', 'legal', 'kitchen', 'interior', 'utilities', 'homeq', 'general', 'phrases', 'wroclaw', 'snow', 'cooking']
     }
   };
   // Długości lekcji
@@ -383,19 +383,22 @@
     if (due.length > 16) nNew = Math.max(3, Math.round(nNew / 2)); // dużo powtórek – mniej nowości
     if (sz.maxNew === 'plus') nNew = Math.min(PACE_MAX + 4, S.pace * 2);
     else if (sz.maxNew) nNew = Math.min(nNew, sz.maxNew);
+    // Słowa o 2+ poziomy niższe niż obecny traktujemy jako znane – nie przeklikujemy ich,
+    // pojawiają się tylko w zdaniach. Wyjątek: trening wybranej talii.
+    const tooEasy = i => !deck && !DECKS[i.deck].detail && i.lvl <= S.level - 2;
     const curLvl = unseen.filter(i => i.lvl === S.level);
-    const lower = unseen.filter(i => i.lvl < S.level);
-    const nLow = Math.min(lower.length, Math.round(nNew * 0.4));
+    const lower = unseen.filter(i => i.lvl < S.level && !tooEasy(i));
+    const nLow = Math.min(lower.length, Math.round(nNew * 0.25));
     let fresh = pickBalanced(lower, nLow).concat(pickBalanced(curLvl, nNew - nLow));
     if (fresh.length < nNew) {
-      fresh = fresh.concat(pickBalanced(unseen.filter(i => i.lvl <= S.level && !fresh.includes(i)), nNew - fresh.length));
+      fresh = fresh.concat(pickBalanced(unseen.filter(i => i.lvl <= S.level && !tooEasy(i) && !fresh.includes(i)), nNew - fresh.length));
     }
     // Wyzwanie: gdy idzie bardzo dobrze, dorzucamy słowa z wyższego poziomu.
     let challenge = [];
     if (size !== 'quick' && S.level < 4 && S.recent.length >= 20 && recentAcc() >= 0.85) {
       challenge = pickBalanced(unseen.filter(i => i.lvl === S.level + 1), 2);
     }
-    if (!fresh.length && !due.length) fresh = pickBalanced(unseen, nNew);
+    if (!fresh.length && !due.length) fresh = pickBalanced(unseen.filter(i => !tooEasy(i)), nNew);
     fresh = fresh.concat(challenge);
 
     const tasks = [];
@@ -898,7 +901,7 @@
 
   function pickMode(item, task) {
     if (task.retry || (task.first && !task.known)) return 'mc-en';
-    let b = Math.max(0, boxOf(item)) + (task.known ? 2 : 0) + (S.level >= 3 ? 1 : 0);
+    let b = Math.max(0, boxOf(item)) + (task.known ? 2 : 0) + (S.level >= 4 ? 2 : S.level >= 3 ? 1 : 0);
     if (item.phrase) return b <= 1 ? 'mc-en' : b === 2 ? 'mc-pl' : 'order';
     const g = gapOf(item);
     if (b <= 1) return 'mc-en';
@@ -1348,12 +1351,13 @@
   // ---------- test poziomujący ----------
   let PT = null;
   VIEWS.test = function () {
+    // Na każdy poziom: 4 pytania z gramatyki (wybór), 1 do wpisania i 3 słowa (polski → angielski).
     PT = { qs: [], idx: 0, score: { 1: 0, 2: 0, 3: 0, 4: 0 } };
     [1, 2, 3, 4].forEach(l => {
-      const pool = shuffle(GRAMMAR.filter(t => t.lvl === l).flatMap(t => t.ex.filter(e => e.o)));
-      pool.slice(0, 4).forEach(ex => PT.qs.push({ lvl: l, ex }));
-      const voc = shuffle(profileItems().filter(i => i.lvl === l && !i.phrase)).slice(0, 2);
-      voc.forEach(it => PT.qs.push({ lvl: l, item: it }));
+      const topics = GRAMMAR.filter(t => t.lvl === l);
+      shuffle(topics.flatMap(t => t.ex.filter(e => e.o))).slice(0, 4).forEach(ex => PT.qs.push({ lvl: l, ex }));
+      shuffle(topics.flatMap(t => t.ex.filter(e => !e.o))).slice(0, 1).forEach(ex => PT.qs.push({ lvl: l, ex }));
+      shuffle(profileItems().filter(i => i.lvl === l && !i.phrase)).slice(0, 3).forEach(it => PT.qs.push({ lvl: l, item: it }));
     });
     $('#view').innerHTML = `
       <section class="card center">
@@ -1373,10 +1377,15 @@
     const q = PT.qs[PT.idx];
     const head = `<div class="row-between small muted"><span>Pytanie ${PT.idx + 1} / ${PT.qs.length}</span><span class="pill sm">${LEVELS[q.lvl]}</span></div>`;
     let ex = q.ex;
+    const answered = ok => { if (ok) PT.score[q.lvl]++; setTimeout(() => { PT.idx++; ptNext(); }, 450); };
+    if (!q.item && !ex.o) {
+      typed(box, { html: head + `<div class="sentence">${fmtQ(ex.q)}</div>`, answers: ex.a, onAnswer: ok => setTimeout(() => answered(ok), 500) });
+      return;
+    }
     if (q.item) {
       const it = q.item;
-      const opts = shuffle([it].concat(distractors(it, 3, i => i.pl)));
-      ex = { q: `Co znaczy: „${it.en}”?`, o: opts.map(i => i.pl).concat(['Nie wiem']), a: opts.indexOf(it) };
+      const opts = shuffle([it].concat(distractors(it, 4, i => i.en)));
+      ex = { q: `Jak po angielsku: „${it.pl}”?`, o: opts.map(i => i.en).concat(['Nie wiem']), a: opts.indexOf(it) };
     } else {
       ex = { q: ex.q, o: ex.o.concat(['Nie wiem']), a: ex.a };
     }
@@ -1386,14 +1395,14 @@
       html: head + `<div class="sentence">${fmtQ(ex.q)}</div>`,
       options: idx.map(i => ex.o[i]),
       correct: idx.indexOf(ex.a),
-      onAnswer: ok => { if (ok) PT.score[q.lvl]++; setTimeout(() => { PT.idx++; ptNext(); }, 450); }
+      onAnswer: ok => { answered(ok); }
     });
   }
 
   function ptFinish(box) {
     let lvl = 1;
     for (const l of [1, 2, 3]) {
-      if (PT.score[l] >= 4) lvl = l + 1; else break;
+      if (PT.score[l] >= 6) lvl = l + 1; else break; // próg: 6 z 8 (75%)
     }
     S.level = lvl; S.placed = true;
     S.pace = lvl >= 3 ? 12 : 10;
@@ -1404,8 +1413,8 @@
     box.innerHTML = `<div class="center">
       <h2>Twój poziom startowy: ${LEVELS[lvl]}</h2>
       <p>${LEVEL_DESC[lvl]}</p>
-      <div class="ptres">${[1, 2, 3, 4].map(l => `<div><span class="pill sm">${LEVELS[l]}</span> ${PT.score[l]}/6</div>`).join('')}</div>
-      <p class="muted small">Słowa z niższych poziomów i tak będą się pojawiać (ok. 40% nowości), żeby utrwalić podstawy.</p>
+      <div class="ptres">${[1, 2, 3, 4].map(l => `<div><span class="pill sm">${LEVELS[l]}</span> ${PT.score[l]}/8</div>`).join('')}</div>
+      <p class="muted small">Żeby przejść poziom, potrzeba 6 z 8 poprawnych. Podstawowe słówka z dużo niższych poziomów nie będą już przeklikiwane – zobaczysz je tylko w zdaniach.</p>
       <div class="actions center"><button class="btn big" id="go2">⚡ Zacznij trening</button></div></div>`;
     $('#go2').onclick = () => startSession(null, 'normal');
     KEYH = null;
