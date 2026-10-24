@@ -776,7 +776,8 @@
       : style === 'glass' ? (k === 'normal' ? 'solid-btn' : 'glass-btn')
       : style === 'dom' ? (k === 'normal' ? 'dom-btn dom-main' : 'dom-btn')
       : `btn ${k === 'normal' ? '' : 'ghost'}`;
-    return `<div class="lessons ${style || ''}">${Object.keys(SIZES).map(k => `<button class="${cls(k)} lesson-btn" data-size="${k}">${SIZES[k].label.replace(/^\S+ /, '')}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
+    // na pulpicie i w treningu tylko trzy rodzaje lekcji (przygotowanie do odcinka jest w zakładce Suits)
+    return `<div class="lessons ${style || ''}">${['quick', 'normal', 'long'].map(k => `<button class="${cls(k)} lesson-btn" data-size="${k}">${SIZES[k].label.replace(/^\S+ /, '')}<small>${SIZES[k].time}</small></button>`).join('')}</div>${extraNote || ''}`;
   }
 
   // Klik w kropkę minerału: podgląd innego kamienia (zablokowane – z informacją, kiedy się odblokują).
@@ -836,8 +837,10 @@
         ${ART.scene('DOMINIK', 'hero-scene')}
         <div class="hd-top glass">Poziom ${LEVELS[S.level]} · ${STAGES[S.level].pl}</div>
         ${!S.placed ? `<a class="hd-test glass" href="#/${cur}/test">Test poziomujący ↗</a>` : ''}
-        <p class="hd-tag">Cześć, Dominik! Angielski do pracy w nieruchomościach – od pierwszej rozmowy z klientem po akt notarialny.</p>
-        <div class="hd-lessons">${lessonButtons('', 'glass')}</div>
+        <div class="hd-bottom">
+          <p class="hd-tag">Cześć, Dominik! Angielski do pracy w nieruchomościach – od pierwszej rozmowy z klientem po akt notarialny.</p>
+          <div class="hd-lessons">${lessonButtons('', 'glass')}</div>
+        </div>
       </section>
       <section class="hd-band">
         <div class="hd-plan">${ART.blueprint()}</div>
