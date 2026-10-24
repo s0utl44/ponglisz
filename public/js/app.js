@@ -18,8 +18,11 @@
   const SIZES = {
     quick: { label: '⚡ Szybka lekcja', time: '~3 min', maxNew: 3, maxDue: 4, gram: 1 },
     normal: { label: '📘 Lekcja', time: '~10 min', maxNew: null, maxDue: 24, gram: 4 },
-    long: { label: '🎓 Długa lekcja', time: '~20 min', maxNew: 'plus', maxDue: 40, gram: 8, intro: true }
+    long: { label: '🎓 Długa lekcja', time: '~20 min', maxNew: 'plus', maxDue: 40, gram: 8, intro: true },
+    // przygotowanie do odcinka Suits: kolejne 25 słów z odcinka + powtórki z tego odcinka
+    episode: { label: '🎬 Przygotowanie do odcinka', time: '~15 min', maxNew: 25, maxDue: 12, gram: 0 }
   };
+  const SUITS_PER_SESSION = 25;
   const LEVELS = { 1: 'A2', 2: 'B1', 3: 'B1+', 4: 'B2' };
   const LEVEL_DESC = {
     1: 'Podstawy – odświeżamy fundamenty',
@@ -249,12 +252,20 @@
   function deckItems(deckId) {
     const d = DECKS[deckId];
     if (!d._items) {
-      d._items = d.items.map(([en, pl, lvl, ex]) => ({ id: deckId + ':' + en, en, pl, lvl, ex, deck: deckId, phrase: d.kind === 'phrase' }));
+      d._items = d.items.map(([en, pl, lvl, ex, tag, ctx]) => ({ id: deckId + ':' + en, en, pl, lvl, ex, tag, ctx, deck: deckId, phrase: d.kind === 'phrase' }));
     }
     return d._items;
   }
   const profileDecks = () => PROFILES[cur].decks;
   const profileItems = () => profileDecks().flatMap(deckItems);
+  // ---------- Suits ----------
+  const SUITS_LIST = window.SUITS || [];
+  const suitsDeck = ep => 'suits-s1e' + String(ep).padStart(2, '0');
+  const epState = ep => (S.suits && S.suits[ep]) || {};
+  const setEp = (ep, patch) => { S.suits = S.suits || {}; S.suits[ep] = Object.assign({}, S.suits[ep], patch); };
+  // odcinki „aktywne”: przygotowane albo obejrzane – ich słowa mieszają się z codziennym treningiem
+  const activeEps = () => SUITS_LIST.map(e => e.ep).filter(ep => epState(ep).prep || epState(ep).watched);
+  const suitsItems = onlyActive => (onlyActive ? activeEps() : SUITS_LIST.map(e => e.ep)).flatMap(ep => DECKS[suitsDeck(ep)] ? deckItems(suitsDeck(ep)) : []);
   const readingsFor = () => (READINGS[cur] || []).concat(READINGS.shared || []).sort((a, b) => a.lvl - b.lvl);
   const GRAMMAR_BY_ID = {};
   GRAMMAR.forEach(t => { GRAMMAR_BY_ID[t.id] = t; });
@@ -369,37 +380,48 @@
     return out;
   }
 
+  function suitsQuizTask() {
+    const pool = activeEps().flatMap(ep => (SUITS_LIST.find(e => e.ep === ep) || { quiz: [] }).quiz.map(q => ({ ep, q })));
+    if (!pool.length) return null;
+    const pick = pool[Math.floor(Math.random() * pool.length)];
+    return { t: 'squiz', ep: pick.ep, ex: pick.q };
+  }
+
   function buildSession(deck, size) {
     const sz = SIZES[size] || SIZES.normal;
     const now = Date.now();
-    let items = profileItems();
-    if (deck) items = items.filter(i => i.deck === deck);
-
-    const due = shuffle(items.filter(i => S.cards[i.id] && S.cards[i.id].d <= now))
+    const items = deck ? deckItems(deck) : profileItems();
+    // powtórki w zwykłym treningu obejmują też słowa z Suits; nowe słowa z Suits – tylko z przerobionych/obejrzanych odcinków
+    const reviewPool = deck ? items : items.concat(suitsItems(false));
+    const due = shuffle(reviewPool.filter(i => S.cards[i.id] && S.cards[i.id].d <= now))
       .sort((a, b) => S.cards[a.id].b - S.cards[b.id].b).slice(0, sz.maxDue);
-    const unseen = items.filter(i => !S.cards[i.id]);
+    const unseen = (deck ? items : items.concat(suitsItems(true))).filter(i => !S.cards[i.id]);
 
-    let nNew = S.pace;
-    if (due.length > 16) nNew = Math.max(3, Math.round(nNew / 2)); // dużo powtórek – mniej nowości
-    if (sz.maxNew === 'plus') nNew = Math.min(PACE_MAX + 4, S.pace * 2);
-    else if (sz.maxNew) nNew = Math.min(nNew, sz.maxNew);
-    // Słowa o 2+ poziomy niższe niż obecny traktujemy jako znane – nie przeklikujemy ich,
-    // pojawiają się tylko w zdaniach. Wyjątek: trening wybranej talii.
-    const tooEasy = i => !deck && !DECKS[i.deck].detail && i.lvl <= S.level - 2;
-    const curLvl = unseen.filter(i => i.lvl === S.level);
-    const lower = unseen.filter(i => i.lvl < S.level && !tooEasy(i));
-    const nLow = Math.min(lower.length, Math.round(nNew * 0.25));
-    let fresh = pickBalanced(lower, nLow).concat(pickBalanced(curLvl, nNew - nLow));
-    if (fresh.length < nNew) {
-      fresh = fresh.concat(pickBalanced(unseen.filter(i => i.lvl <= S.level && !tooEasy(i) && !fresh.includes(i)), nNew - fresh.length));
+    let fresh, challenge = [];
+    if (size === 'episode') {
+      fresh = unseen.slice(0, SUITS_PER_SESSION); // w kolejności z pakietu (tak jak w odcinku)
+    } else {
+      let nNew = S.pace;
+      if (due.length > 16) nNew = Math.max(3, Math.round(nNew / 2)); // dużo powtórek – mniej nowości
+      if (sz.maxNew === 'plus') nNew = Math.min(PACE_MAX + 4, S.pace * 2);
+      else if (sz.maxNew) nNew = Math.min(nNew, sz.maxNew);
+      // Słowa o 2+ poziomy niższe niż obecny traktujemy jako znane – nie przeklikujemy ich,
+      // pojawiają się tylko w zdaniach. Wyjątek: trening wybranej talii.
+      const tooEasy = i => !deck && !DECKS[i.deck].detail && i.lvl <= S.level - 2;
+      const curLvl = unseen.filter(i => i.lvl === S.level);
+      const lower = unseen.filter(i => i.lvl < S.level && !tooEasy(i));
+      const nLow = Math.min(lower.length, Math.round(nNew * 0.25));
+      fresh = pickBalanced(lower, nLow).concat(pickBalanced(curLvl, nNew - nLow));
+      if (fresh.length < nNew) {
+        fresh = fresh.concat(pickBalanced(unseen.filter(i => i.lvl <= S.level && !tooEasy(i) && !fresh.includes(i)), nNew - fresh.length));
+      }
+      // Wyzwanie: gdy idzie bardzo dobrze, dorzucamy słowa z wyższego poziomu.
+      if (size !== 'quick' && S.level < 4 && S.recent.length >= 20 && recentAcc() >= 0.85) {
+        challenge = pickBalanced(unseen.filter(i => i.lvl === S.level + 1), 2);
+      }
+      if (!fresh.length && !due.length) fresh = pickBalanced(unseen.filter(i => !tooEasy(i)), nNew);
+      fresh = fresh.concat(challenge);
     }
-    // Wyzwanie: gdy idzie bardzo dobrze, dorzucamy słowa z wyższego poziomu.
-    let challenge = [];
-    if (size !== 'quick' && S.level < 4 && S.recent.length >= 20 && recentAcc() >= 0.85) {
-      challenge = pickBalanced(unseen.filter(i => i.lvl === S.level + 1), 2);
-    }
-    if (!fresh.length && !due.length) fresh = pickBalanced(unseen.filter(i => !tooEasy(i)), nNew);
-    fresh = fresh.concat(challenge);
 
     const tasks = [];
     const rev = due.slice();
@@ -417,6 +439,9 @@
       if (k % 4 === 3 && gram.length) tasks.push(gram.shift());
     });
     gram.forEach(g => tasks.push(g));
+    // pytanie z quizu do obejrzanego / przygotowanego odcinka Suits
+    const sq = !deck && size !== 'quick' ? suitsQuizTask() : null;
+    if (sq) tasks.splice(Math.floor(tasks.length / 2), 0, sq);
 
     return { pid: cur, tasks, idx: 0, ok: 0, n: 0, wrong: [], requeued: new Set(), deck, size: size || 'normal', newCount: fresh.length, revCount: due.length, xp0: S.xp };
   }
@@ -549,7 +574,7 @@
     $('#ptabs').innerHTML = `<a class="who-pill" href="#/" title="Zmień kurs">
         <b>${p.name}</b><span>${LEVELS[S.level]} · ${badge}</span><i>⇄</i></a>${themeToggle()}`;
     nav.hidden = false;
-    const items = [['home', 'Postępy'], ['train', 'Trening'], ['words', 'Słownictwo'], ['grammar', 'Gramatyka'], ['read', 'Czytanie'], ['settings', 'Ustawienia']];
+    const items = [['home', 'Postępy'], ['train', 'Trening'], ['words', 'Słownictwo'], ['grammar', 'Gramatyka'], ['read', 'Czytanie'], ['suits', 'Suits'], ['settings', 'Ustawienia']];
     nav.innerHTML = items.map(([v, l]) => `<a href="#/${cur}/${v}" class="${v === view ? 'active' : ''}">${l}</a>`).join('');
   }
 
@@ -659,8 +684,9 @@
     const ra = recentAcc(40);
     const st = streak();
     const td = S.days[today()] || { c: 0, t: 0 };
-    const totalMastered = profileDecks().reduce((a, d) => a + deckStats(d).mastered, 0);
-    const totalSeen = profileDecks().reduce((a, d) => a + deckStats(d).seen, 0);
+    const allDecks = profileDecks().concat(SUITS_LIST.map(e => suitsDeck(e.ep)).filter(d => DECKS[d]));
+    const totalMastered = allDecks.reduce((a, d) => a + deckStats(d).mastered, 0);
+    const totalSeen = allDecks.reduce((a, d) => a + deckStats(d).seen, 0);
     const newCount = Math.min(S.pace, profileItems().filter(i => !S.cards[i.id]).length);
     const nextTopic = GRAMMAR.filter(t => t.lvl <= S.level).sort((a, b) => gMastery(a.id) - gMastery(b.id) || a.lvl - b.lvl)[0];
     const readings = readingsFor();
@@ -680,6 +706,12 @@
         <span>${label}</span></div>`;
     }).join('');
 
+    const suitsStats = SUITS_LIST.reduce((a, e) => { const st = deckStats(suitsDeck(e.ep)); a.total += st.total; a.seen += st.seen; a.mastered += st.mastered; return a; }, { total: 0, seen: 0, mastered: 0 });
+    const suitsRow = SUITS_LIST.length ? `<div class="deckrow">
+        <div class="dr-head"><span>⚖️ <b>Suits – sezon 1</b></span><span class="muted small">${suitsStats.mastered} opanowane · ${suitsStats.seen}/${suitsStats.total} poznane</span></div>
+        <div class="stack"><span class="m" style="width:${suitsStats.mastered / suitsStats.total * 100}%"></span><span class="s" style="width:${(suitsStats.seen - suitsStats.mastered) / suitsStats.total * 100}%"></span></div>
+        <div class="dr-act"><a href="#/${cur}/suits" class="link">odcinki i przygotowanie</a></div>
+      </div>` : '';
     const deckRows = profileDecks().map(d => {
       const s = deckStats(d), D = DECKS[d];
       const dd = dueCount(d);
@@ -720,7 +752,7 @@
       <section class="grid2">
         <div class="card">
           <h2>Słownictwo</h2>
-          ${deckRows}
+          ${deckRows}${suitsRow}
           <p class="small muted legend"><span class="lg a"></span> opanowane <span class="lg b"></span> w trakcie nauki</p>
         </div>
         <div class="card">
@@ -868,13 +900,15 @@
     if (task.t === 'learn') return renderLearn(box, task);
     if (task.t === 'gram') return renderGramTask(box, task);
     if (task.t === 'gramIntro') return renderGramIntro(box, task);
+    if (task.t === 'squiz') return renderSuitsQuiz(box, task);
     return renderQuiz(box, task);
   }
   function nextTask() { SESSION.idx++; renderTask(); }
 
   function deckLabel(item) {
     const D = DECKS[item.deck];
-    return `<div class="deck-label">${D.icon} ${D.title} · <span class="pill sm">${LEVELS[item.lvl]}</span></div>`;
+    const tag = item.tag ? ` · <span class="tagchip">${h(item.tag)}</span>` : '';
+    return `<div class="deck-label">${D.icon} ${h(D.title)}${D.group === 'suits' ? '' : ` · <span class="pill sm">${LEVELS[item.lvl]}</span>`}${tag}</div>`;
   }
 
   function renderLearn(box, task) {
@@ -885,6 +919,7 @@
       <div class="word">${h(it.en)} ${sayBtn(it.en)}</div>
       <div class="tr">${h(it.pl)}</div>
       ${it.ex ? `<div class="example">„${h(it.ex)}” ${sayBtn(it.ex, 'sm')}</div>` : ''}
+      ${it.ctx ? `<div class="ctx muted small">🎬 W odcinku: ${h(it.ctx)}</div>` : ''}
       <div class="actions">
         <button class="btn ghost" id="known">Już to znam</button>
         <button class="btn" id="go">Dalej ↵</button>
@@ -953,7 +988,7 @@
         onAnswer: ok => done(ok, { answer: correctText })
       });
     } else if (mode === 'type') {
-      const answers = it.en.split(/\s*\/\s*/);
+      const answers = answerVariants(it.en);
       typed(box, {
         html: head + `<div class="qlabel">Wpisz po angielsku</div><div class="word pl">${h(it.pl)}</div>` +
           (it.ex ? `<div class="hintline muted small">Podpowiedź z kontekstu: „${h(it.ex.replace(new RegExp('\\b' + escRe(stripTo(it.en)) + '\\b', 'ig'), '…'))}”</div>` : ''),
@@ -967,6 +1002,17 @@
         onAnswer: ok => done(ok, { answer: it.en })
       });
     }
+  }
+
+  // „to be crawling with sth” → akceptujemy też wersję bez „sth”, bez nawiasów itd.
+  function answerVariants(en) {
+    const out = new Set();
+    en.split(/\s*\/\s*/).forEach(v => {
+      out.add(v);
+      const c = v.replace(/\([^)]*\)/g, ' ').replace(/\b(sth|sb|someone|something|somebody|one's|X|Y)\b/g, ' ').replace(/\s+/g, ' ').trim();
+      if (c) out.add(c);
+    });
+    return Array.from(out);
   }
 
   function quizAnswered(task, ok, extra) {
@@ -999,6 +1045,21 @@
       <div class="actions"><button class="btn" id="go">Rozumiem – ćwiczymy ↵</button></div>`;
     $('#go').onclick = nextTask;
     KEYH = e => { if (e.key === 'Enter') nextTask(); };
+  }
+
+  function renderSuitsQuiz(box, task) {
+    const e = SUITS_LIST.find(x => x.ep === task.ep);
+    const idx = shuffle(task.ex.o.map((_, i) => i));
+    mc(box, {
+      html: `<div class="badge gram">⚖️ Suits · S01E${String(task.ep).padStart(2, '0')} ${h(e.title)}</div><div class="sentence">${task.ex.q}</div>`,
+      options: idx.map(i => task.ex.o[i]),
+      correct: idx.indexOf(task.ex.a),
+      onAnswer: ok => {
+        SESSION.n++; if (ok) SESSION.ok++;
+        logAnswer(ok); save();
+        feedback(ok, ok ? '' : `Poprawnie: <b>${h(task.ex.o[task.ex.a])}</b>`, nextTask);
+      }
+    });
   }
 
   function renderGramTask(box, task) {
@@ -1047,6 +1108,7 @@
       s.finished = true;
       s.acc = s.n ? s.ok / s.n : 0;
       s.msgs = s.n ? adapt(s.acc, s.n) : [];
+      if (s.n && s.deck && DECKS[s.deck] && DECKS[s.deck].group === 'suits') setEp(DECKS[s.deck].episode, { prep: true });
       if (s.n) S.sessions++;
       save();
     }
@@ -1181,7 +1243,8 @@
 
   // ---------- słownictwo ----------
   VIEWS.words = function (deckArg) {
-    const decks = profileDecks();
+    const decks = profileDecks().slice();
+    if (deckArg && DECKS[deckArg] && DECKS[deckArg].group === 'suits') decks.push(deckArg);
     const deck = decks.includes(deckArg) ? deckArg : decks[0];
     const items = deckItems(deck);
     const chips = decks.map(d => `<a class="chip ${d === deck ? 'active' : ''}" href="#/${cur}/words/${d}">${DECKS[d].icon} ${DECKS[d].title}</a>`).join('');
@@ -1347,6 +1410,108 @@
       $('#check').disabled = true;
     };
   };
+
+  // ---------- Suits: przygotowanie do odcinków ----------
+  VIEWS.suits = function (arg) {
+    if (!SUITS_LIST.length) { $('#view').innerHTML = '<section class="card"><p>Brak materiałów do Suits.</p></section>'; return; }
+    const ep = parseInt(arg, 10);
+    if (!ep) return suitsList();
+    const e = SUITS_LIST.find(x => x.ep === ep);
+    if (!e) return suitsList();
+    const deck = suitsDeck(ep), st = deckStats(deck), es = epState(ep);
+    const left = st.total - st.seen;
+    const dueHere = dueCount(deck);
+    const code = 'S01E' + String(ep).padStart(2, '0');
+    const prev = SUITS_LIST.find(x => x.ep === ep - 1), next = SUITS_LIST.find(x => x.ep === ep + 1);
+    $('#view').innerHTML = `
+      <section class="card suits-ep">
+        <a class="link" href="#/${cur}/suits">← wszystkie odcinki</a>
+        <div class="se-head">
+          <div>
+            <span class="eyebrow">Suits · sezon 1 · odcinek ${ep}</span>
+            <h1>${code} · ${h(e.title)}</h1>
+          </div>
+          <button class="btn ${es.watched ? '' : 'ghost'}" id="watched">${es.watched ? '✓ Obejrzany' : 'Oznacz jako obejrzany'}</button>
+        </div>
+        <div class="se-progress">
+          <div class="stack"><span class="m" style="width:${st.mastered / st.total * 100}%"></span><span class="s" style="width:${(st.seen - st.mastered) / st.total * 100}%"></span></div>
+          <p class="small muted">${st.seen}/${st.total} słów poznanych · ${st.mastered} opanowanych${dueHere ? ` · <b class="due">${dueHere} do powtórki</b>` : ''}${es.quiz != null ? ` · quiz: ${pct(es.quiz)}` : ''}</p>
+        </div>
+        <div class="actions se-actions">
+          ${left ? `<button class="btn big" id="prep">🎬 Przygotuj się do odcinka<small>${Math.min(left, SUITS_PER_SESSION)} nowych słów${left > SUITS_PER_SESSION ? ` (zostało ${left})` : ''}</small></button>` : ''}
+          ${st.seen ? `<button class="btn ghost" id="rev">🔁 Powtórz słówka z odcinka</button>` : ''}
+          <a class="btn ghost" href="#quiz" id="toquiz">📝 Quiz</a>
+          <a class="btn ghost" href="#/${cur}/words/${deck}">📚 Lista słów</a>
+        </div>
+        <div class="se-body">
+          <h2>O czym jest odcinek</h2><div class="lesson">${e.about}</div>
+          ${e.cast ? `<details><summary>Postaci – kto jest kim</summary><div class="lesson">${e.cast}</div></details>` : ''}
+          ${e.review ? `<h2>Powtórka – usłyszysz to znowu</h2><div class="lesson">${e.review}</div>` : ''}
+          <details><summary>Gramatyka w akcji</summary><div class="lesson">${e.grammar}</div></details>
+          <details><summary>Odniesienia kulturowe (żeby załapać żarty)</summary><div class="lesson">${e.culture}</div></details>
+          <details><summary>Zadanie po obejrzeniu</summary><div class="lesson">${e.task}</div></details>
+        </div>
+      </section>
+      <section class="card" id="quizbox">
+        <h2>Quiz – sprawdź się ${es.watched ? 'po odcinku' : 'przed odcinkiem'}</h2>
+        <div id="sq">${e.quiz.map((q, qi) => `<fieldset class="rqq"><legend>${qi + 1}. ${q.q}</legend>
+          ${q.o.map((o, oi) => `<label><input type="radio" name="sq${qi}" value="${oi}"> ${h(o)}</label>`).join('')}</fieldset>`).join('')}</div>
+        <div class="actions"><button class="btn" id="sqcheck">Sprawdź odpowiedzi</button></div>
+        <div id="sqres"></div>
+      </section>
+      <nav class="se-nav">
+        ${prev ? `<a class="btn ghost" href="#/${cur}/suits/${prev.ep}">← S01E${String(prev.ep).padStart(2, '0')}</a>` : '<span></span>'}
+        ${next ? `<a class="btn ghost" href="#/${cur}/suits/${next.ep}">S01E${String(next.ep).padStart(2, '0')} →</a>` : ''}
+      </nav>`;
+    $$('.se-body i, #sq legend i').forEach(el => { if (el.textContent.length > 6) { el.classList.add('sayable'); el.onclick = () => speak(el.textContent); } });
+    $('#watched').onclick = () => { setEp(ep, { watched: !es.watched }); save(); VIEWS.suits(String(ep)); };
+    if ($('#prep')) $('#prep').onclick = () => startSession(deck, 'episode');
+    if ($('#rev')) $('#rev').onclick = () => {
+      // powtórka: wszystkie poznane słowa z odcinka, najsłabsze najpierw
+      const items = deckItems(deck).filter(i => S.cards[i.id]).sort((a, b) => S.cards[a.id].b - S.cards[b.id].b).slice(0, 20);
+      SESSION = { pid: cur, tasks: shuffle(items).map(i => ({ t: 'quiz', item: i })), idx: 0, ok: 0, n: 0, wrong: [], requeued: new Set(), deck, size: 'episode', newCount: 0, revCount: items.length, xp0: S.xp };
+      go(`#/${cur}/train`);
+    };
+    $('#toquiz').onclick = ev => { ev.preventDefault(); $('#quizbox').scrollIntoView({ behavior: 'smooth' }); };
+    $('#sqcheck').onclick = () => {
+      let ok = 0;
+      e.quiz.forEach((q, qi) => {
+        const sel = $(`input[name=sq${qi}]:checked`);
+        const fs = $$('#sq .rqq')[qi];
+        $$('label', fs).forEach((l, oi) => { l.classList.toggle('right', oi === q.a); l.classList.toggle('wrong', !!sel && +sel.value === oi && oi !== q.a); });
+        const good = !!sel && +sel.value === q.a;
+        if (good) ok++;
+        logAnswer(good);
+      });
+      const score = ok / e.quiz.length;
+      setEp(ep, { quiz: Math.max(es.quiz || 0, score) });
+      save();
+      $('#sqres').innerHTML = `<div class="fb ${score >= 0.7 ? 'ok' : 'bad'}"><b>${ok}/${e.quiz.length}</b> – ${score >= 0.9 ? 'świetnie, możesz oglądać! 🍿' : score >= 0.7 ? 'dobrze – przejrzyj jeszcze błędne.' : 'warto najpierw przejść słówka z odcinka.'}</div>`;
+      $('#sqcheck').disabled = true;
+      if (cur === 'jana' && score >= 0.7) { const r = $('#sqres').getBoundingClientRect(); ART.burst(r.left + r.width / 2, r.top + 20, MINERALS[S.level].key, 24); }
+    };
+  };
+
+  function suitsList() {
+    const nextEp = (SUITS_LIST.find(e => !epState(e.ep).watched) || {}).ep;
+    $('#view').innerHTML = `
+      <section class="card suits-list">
+        <span class="eyebrow">Przygotowanie do odcinków</span>
+        <h1>⚖️ Suits – sezon 1</h1>
+        <p class="muted">Przed odcinkiem przejdź słówka i idiomy z niego (po ${SUITS_PER_SESSION} na raz), zrób quiz, a potem oglądaj.
+          Poznane słowa wracają w codziennym treningu, a odpowiedzi liczą się do postępów. Oznacz odcinek jako obejrzany – jego słowa zaczną się mieszać z resztą kursu.</p>
+        <div class="ep-grid">${SUITS_LIST.map(e => {
+          const st = deckStats(suitsDeck(e.ep)), es = epState(e.ep);
+          const code = 'S01E' + String(e.ep).padStart(2, '0');
+          return `<a class="ep-card ${e.ep === nextEp ? 'next' : ''} ${es.watched ? 'watched' : ''}" href="#/${cur}/suits/${e.ep}">
+            <span class="ep-code">${code}</span>
+            <b>${h(e.title)}</b>
+            <span class="mini"><span style="width:${Math.round(st.seen / st.total * 100)}%"></span></span>
+            <small>${es.watched ? '✓ obejrzany' : e.ep === nextEp ? '▶ następny' : ''} ${st.seen}/${st.total} słów${es.quiz != null ? ` · quiz ${pct(es.quiz)}` : ''}</small>
+          </a>`;
+        }).join('')}</div>
+      </section>`;
+  }
 
   // ---------- test poziomujący ----------
   let PT = null;

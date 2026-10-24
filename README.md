@@ -14,6 +14,7 @@ Obie osoby mają też wspólne podstawy: **codzienny angielski**, **zwroty do ro
 - **ok. 1040 słów i wyrażeń**, w tym szczegółowe słownictwo o domu: wyposażenie kuchni, wnętrza, ogrzewanie i klimatyzacja oraz pytania klientów przy oglądaniu mieszkania; przykładowe zdania i 4 poziomy (A2 → B1 → B1+ → B2). Słowa o dwa poziomy niższe niż Twój nie są już przeklikiwane – pojawiają się tylko w zdaniach
 - **20 lekcji gramatyki** z wyjaśnieniami po polsku i 200 ćwiczeniami (przykłady z geologii, nieruchomości, Wrocławia, stoku i kuchni)
 - **12 tekstów do czytania** (po 4 dla Jany i Dominika + 4 wspólne: weekend we Wrocławiu, pierwszy dzień na snowboardzie, pierogi, Wrocław i powódź 1997) ze słowniczkiem i pytaniami
+- **Suits – sezon 1:** 12 odcinków, ok. 1200 słów i idiomów z kontekstem z odcinka, opis bez spoilerów, gramatyka, odniesienia kulturowe i quiz. Przygotowanie przed odcinkiem po 25 słów; poznane słowa wracają w codziennym treningu, a z obejrzanych odcinków dochodzą też nowe słowa i pytania z quizów (dane: `public/js/data/decks-suits.js`)
 - **lekcje o różnej długości:** ⚡ szybka (~3 min), 📘 zwykła (~10 min), 🎓 długa (~20 min, z mini-lekcją gramatyki)
 - **wymowa** – przycisk 🔊 czyta słowa, zdania i całe teksty (synteza mowy w przeglądarce)
 - **test poziomujący** – ustala poziom startowy

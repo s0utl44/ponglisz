@@ -499,3 +499,29 @@ body[data-profile="jana"] .result-ring { animation: ringIn 1s cubic-bezier(.2, .
   *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; animation-delay: 0s !important; transition-duration: .001ms !important; }
   .dust, .crystal .spark { display: none; }
 }
+
+/* =======================================================================
+   SUITS
+   ======================================================================= */
+.tagchip { display: inline-block; font-size: .66rem; letter-spacing: .08em; text-transform: uppercase; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.ctx { margin: 6px 0 0; }
+.ep-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; margin-top: 16px; }
+.ep-card { display: flex; flex-direction: column; gap: 6px; text-decoration: none; color: var(--text); background: var(--card-2); border: 1px solid var(--line); border-radius: 14px; padding: 14px; transition: transform .15s, border-color .15s; }
+body[data-profile="dominik"] .ep-card { border-radius: 4px; }
+.ep-card:hover { transform: translateY(-2px); border-color: var(--accent); }
+.ep-card .ep-code { font-family: Anton, sans-serif; font-size: 1.5rem; letter-spacing: .02em; line-height: 1; }
+.ep-card .mini { width: 100%; }
+.ep-card small { color: var(--muted); }
+.ep-card.next { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.ep-card.watched .ep-code { color: var(--accent); }
+.se-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; margin-top: 8px; }
+.se-head h1 { margin: 4px 0 0; }
+.se-progress { margin: 14px 0 4px; }
+.se-progress .stack { height: 8px; }
+.se-actions { justify-content: flex-start; }
+.se-body h2 { margin-top: 1.4em; }
+.se-body details { margin-top: 12px; border-top: 1px solid var(--line); padding-top: 10px; }
+.se-body summary { cursor: pointer; font-weight: 600; color: var(--accent); }
+.se-body .lesson h4 { margin: 1em 0 .3em; }
+.se-nav { display: flex; justify-content: space-between; margin-bottom: 16px; }
+#sq legend i { color: var(--accent); font-style: normal; }
